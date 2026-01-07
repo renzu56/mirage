@@ -45,10 +45,7 @@ export default function CountdownCard({
         <TimeBox label="Sek" value={fmt2(parts.seconds)} />
       </div>
 
-      <p className="mt-6 text-sm md:text-base text-black/70">
-        Wenn das Event live ist, sind genau ~300 Musikvideos freigeschaltet. Keine Kommentare. Keine Profile.
-        Einfach schauen.
-      </p>
+     
     </div>
   )
 }
