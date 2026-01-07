@@ -3,7 +3,7 @@ import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
 
 export const metadata: Metadata = {
-  title: 'AeroStage',
+  title: 'Mirage',
   description: 'Weekly swipe-only music-video events for musicians.',
   themeColor: '#7cc7ff',
 }
