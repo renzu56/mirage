@@ -77,11 +77,11 @@ export default function SubmitClient({
 
     const trimmed = code.trim().toUpperCase()
     if (trimmed.length < 4) {
-      setRedeemError('Bitte gültigen Code eingeben.')
+      setRedeemError('Please enter a valid code.')
       return
     }
     if (!token || !userId) {
-      setRedeemError('Kein Login-Token. Bitte Seite neu laden.')
+      setRedeemError('No login token found. Please reload the page.')
       return
     }
 
@@ -98,16 +98,15 @@ export default function SubmitClient({
       })
 
       const json = await res.json().catch(() => ({} as any))
-      if (!res.ok) throw new Error(json?.error ?? 'Code ungültig')
+      if (!res.ok) throw new Error(json?.error ?? 'Invalid code')
 
-      // Reload submission and refresh server components so the page state is consistent
       await loadSubmission(userId)
       router.refresh()
 
-      setSaveMsg('Code eingelöst ✓')
+      setSaveMsg('Code redeemed ✓')
       setTimeout(() => setSaveMsg(null), 1500)
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Code ungültig'
+      const msg = e instanceof Error ? e.message : 'Invalid code'
       setRedeemError(msg)
     } finally {
       setBusy(false)
@@ -129,56 +128,56 @@ export default function SubmitClient({
         .single()
       if (error) throw error
       setSub(data as SubmissionRow)
-      setSaveMsg('Gespeichert ✓')
+      setSaveMsg('Saved ✓')
       setTimeout(() => setSaveMsg(null), 1500)
       router.refresh()
     } catch {
-      setSaveMsg('Fehler beim Speichern')
+      setSaveMsg('Error while saving')
     } finally {
       setBusy(false)
     }
   }
 
- const uploadVideo = async (file: File) => {
-  if (!sub) return;
-  setBusy(true);
-  setSaveMsg(null);
+  const uploadVideo = async (file: File) => {
+    if (!sub) return
+    setBusy(true)
+    setSaveMsg(null)
 
-  try {
-    if (!token) throw new Error("Kein Login-Token. Bitte Seite neu laden.");
+    try {
+      if (!token) throw new Error('No login token found. Please reload the page.')
 
-    const form = new FormData();
-    form.append("file", file);
-    form.append("eventId", eventId);
+      const form = new FormData()
+      form.append('file', file)
+      form.append('eventId', eventId)
 
-    const res = await fetch("/api/upload-video", {
-      method: "POST",
-      headers: { authorization: `Bearer ${token}` },
-      body: form,
-    });
+      const res = await fetch('/api/upload-video', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+        body: form,
+      })
 
-    const json = await res.json();
-    if (!res.ok) throw new Error(json?.error ?? "Upload fehlgeschlagen");
+      const json = await res.json()
+      if (!res.ok) throw new Error(json?.error ?? 'Upload failed')
 
-    await save({ video_path: json.path, published: true });
-  } catch (e: any) {
-    setSaveMsg(e?.message ?? "Upload fehlgeschlagen");
-  } finally {
-    setBusy(false);
+      await save({ video_path: json.path, published: true })
+    } catch (e: any) {
+      setSaveMsg(e?.message ?? 'Upload failed')
+    } finally {
+      setBusy(false)
+    }
   }
-};
-
 
   if (!ready) {
     return (
-      <main className="flex h-[100svh] items-center justify-center p-6">
+      <main className="min-h-[100dvh] w-full flex items-center justify-center p-4">
         <div className="aero-glass rounded-3xl p-6">Loading…</div>
       </main>
     )
   }
 
   return (
-    <main className="relative h-[100svh] w-full overflow-hidden p-6">
+    // ✅ Mobile fix: allow scrolling, don’t clip content
+    <main className="min-h-[100dvh] w-full overflow-y-auto overflow-x-hidden p-4 pb-[calc(env(safe-area-inset-bottom)+16px)]">
       <div className="mx-auto w-full max-w-2xl">
         <div className="flex items-center justify-between gap-3">
           <div className="aero-glass rounded-3xl px-4 py-3">
@@ -186,15 +185,15 @@ export default function SubmitClient({
             <div className="text-lg font-semibold">{eventTitle}</div>
           </div>
           <Link className="aero-btn rounded-2xl px-3 py-2 text-sm font-semibold" href="/">
-            Zurück
+            Back
           </Link>
         </div>
 
         {!sub ? (
           <div className="mt-6 aero-glass rounded-3xl p-6">
-            <div className="text-lg font-semibold">Einmaligen Code eingeben</div>
+            <div className="text-lg font-semibold">Enter your one-time code</div>
             <p className="mt-2 text-sm text-black/70">
-              Du bekommst einen Code, der genau einem Slot (von ~300) für dieses Event entspricht.
+              You will receive a code that corresponds to exactly one slot (~300 total) for this event.
             </p>
 
             <div className="mt-4 flex gap-2">
@@ -209,7 +208,7 @@ export default function SubmitClient({
                 onClick={redeem}
                 className="aero-btn rounded-2xl px-4 py-3 text-sm font-semibold"
               >
-                Einlösen
+                Redeem
               </button>
             </div>
 
@@ -217,18 +216,18 @@ export default function SubmitClient({
             {saveMsg ? <p className="mt-3 text-sm text-black/70">{saveMsg}</p> : null}
 
             <div className="mt-6 text-xs text-black/60">
-              Datenschutz-Hinweis: In diesem MVP werden Likes per IP-Hash gezählt (keine Kommentare, keine Profile).
+              Privacy note: In this MVP likes are counted via IP-hash (no comments, no profiles).
             </div>
           </div>
         ) : (
           <div className="mt-6 grid gap-4">
             <div className="aero-glass rounded-3xl p-6">
-              <div className="text-lg font-semibold">Dein Eintrag</div>
+              <div className="text-lg font-semibold">Your submission</div>
               <p className="mt-1 text-sm text-black/70">
-                Fülle alles aus, lade ein Video hoch, fertig. Sobald das Event startet, wird dein Video freigeschaltet.
+                Fill in the details, upload a video, done. When the event starts, your video becomes available in the feed.
               </p>
 
-              <FormRow label="Artist/Act Name">
+              <FormRow label="Artist / Act name">
                 <input
                   value={sub.display_name}
                   onChange={(e) => setSub((s) => (s ? { ...s, display_name: e.target.value } : s))}
@@ -236,7 +235,7 @@ export default function SubmitClient({
                 />
               </FormRow>
 
-              <FormRow label="Beschreibung">
+              <FormRow label="Description">
                 <textarea
                   value={sub.description ?? ''}
                   onChange={(e) => setSub((s) => (s ? { ...s, description: e.target.value } : s))}
@@ -246,21 +245,21 @@ export default function SubmitClient({
               </FormRow>
 
               <div className="grid gap-3 md:grid-cols-3">
-                <FormRow label="Spotify Link">
+                <FormRow label="Spotify link">
                   <input
                     value={sub.spotify_url ?? ''}
                     onChange={(e) => setSub((s) => (s ? { ...s, spotify_url: e.target.value } : s))}
                     className="w-full rounded-2xl border border-white/60 bg-white/50 px-4 py-3 text-sm outline-none"
                   />
                 </FormRow>
-                <FormRow label="SoundCloud Link">
+                <FormRow label="SoundCloud link">
                   <input
                     value={sub.soundcloud_url ?? ''}
                     onChange={(e) => setSub((s) => (s ? { ...s, soundcloud_url: e.target.value } : s))}
                     className="w-full rounded-2xl border border-white/60 bg-white/50 px-4 py-3 text-sm outline-none"
                   />
                 </FormRow>
-                <FormRow label="Instagram Link">
+                <FormRow label="Instagram link">
                   <input
                     value={sub.instagram_url ?? ''}
                     onChange={(e) => setSub((s) => (s ? { ...s, instagram_url: e.target.value } : s))}
@@ -283,7 +282,7 @@ export default function SubmitClient({
                   }
                   className="aero-btn rounded-2xl px-4 py-3 text-sm font-semibold"
                 >
-                  Speichern
+                  Save
                 </button>
 
                 <button
@@ -291,7 +290,7 @@ export default function SubmitClient({
                   onClick={() => save({ published: true })}
                   className="aero-btn rounded-2xl px-4 py-3 text-sm font-semibold"
                 >
-                  Veröffentlichen
+                  Publish
                 </button>
 
                 <button
@@ -299,17 +298,18 @@ export default function SubmitClient({
                   onClick={() => save({ published: false })}
                   className="aero-btn rounded-2xl px-4 py-3 text-sm font-semibold"
                 >
-                  Verstecken
+                  Hide
                 </button>
 
                 {saveMsg ? <span className="text-sm text-black/70">{saveMsg}</span> : null}
               </div>
 
               <div className="mt-6">
-                <div className="text-sm font-semibold">Video Upload (mp4)</div>
+                <div className="text-sm font-semibold">Video upload (mp4)</div>
                 <p className="mt-1 text-xs text-black/60">
-                  Tipp: 9:16, unter 50 MB (Free Tier friendly). Bucket ist privat; live-feed nutzt Signed URLs.
+                  Tip: 9:16, under 50 MB (free-tier friendly). Bucket is private; live feed uses signed URLs.
                 </p>
+
                 <input
                   disabled={busy}
                   type="file"
@@ -322,18 +322,18 @@ export default function SubmitClient({
                 />
 
                 <div className="mt-2 text-xs text-black/60">
-                  Status: {sub.video_path ? 'Video hochgeladen' : 'Noch kein Video'} ·{' '}
-                  {sub.published ? 'veröffentlicht' : 'nicht veröffentlicht'}
+                  Status: {sub.video_path ? 'Video uploaded' : 'No video yet'} ·{' '}
+                  {sub.published ? 'published' : 'not published'}
                 </div>
               </div>
             </div>
 
             <div className="aero-glass rounded-3xl p-6">
-              <div className="text-sm font-semibold">Was passiert dann?</div>
+              <div className="text-sm font-semibold">What happens next?</div>
               <ul className="mt-2 text-sm text-black/70 list-disc pl-5 space-y-1">
-                <li>Du bist einem Slot (Code) zugeordnet.</li>
-                <li>Wenn das Event startet, werden alle veröffentlichten Videos freigeschaltet.</li>
-                <li>Likes werden per IP-Hash pro Video gezählt (1 Like pro IP).</li>
+                <li>You are assigned to one slot (via code).</li>
+                <li>When the event starts, all published videos become available.</li>
+                <li>Likes are counted via IP-hash per video (1 like per IP).</li>
               </ul>
             </div>
           </div>

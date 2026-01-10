@@ -7,13 +7,14 @@ export default async function SubmitPage() {
 
   if (!submissionsOpen) {
     return (
-      <main className="flex h-[100svh] items-center justify-center p-6">
-        <div className="aero-glass rounded-3xl p-6 max-w-md">
+      <main className="min-h-[100dvh] w-full flex items-center justify-center p-4 pb-[calc(env(safe-area-inset-bottom)+16px)]">
+        <div className="aero-glass rounded-3xl p-6 max-w-md w-full">
           <div className="text-lg font-semibold">Submissions are closed</div>
           <p className="mt-2 text-sm text-black/70">
-           You can only post, when the Submission Phase is open.
+            You can only post while the submission phase is open.
           </p>
-          <div className="mt-4 flex items-center gap-2">
+
+          <div className="mt-4 flex flex-wrap items-center gap-2">
             <Link className="aero-btn rounded-2xl px-4 py-3 text-sm font-semibold" href="/">
               Back
             </Link>
@@ -23,9 +24,10 @@ export default async function SubmitPage() {
               </Link>
             ) : null}
           </div>
+
           {next ? (
             <p className="mt-4 text-xs text-black/60">
-              Next Event is in: {new Date(next.starts_at).toLocaleString('de-DE')}
+              Next event starts: {new Date(next.starts_at).toLocaleString('en-GB')}
             </p>
           ) : null}
         </div>
