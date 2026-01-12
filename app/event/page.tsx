@@ -8,6 +8,7 @@ import { SoundProvider } from "@/components/SoundProvider";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+
 // ✅ SSR aus für den Feed
 const VideoFeedClient = dynamicImport(
   () => import("@/components/VideoFeedClient").then((m) => m.VideoFeedClient),

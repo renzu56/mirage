@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import type { EventRow } from '@/lib/types'
+import { unstable_noStore as noStore } from "next/cache";
 
 export type EventStatus = {
   live: EventRow | null
@@ -8,6 +9,7 @@ export type EventStatus = {
 }
 
 export async function getEventStatus(): Promise<EventStatus> {
+   noStore(); 
   const sb = supabaseAdmin()
   const { data, error } = await sb
     .from('events')

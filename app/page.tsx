@@ -7,6 +7,9 @@
 import Link from "next/link";
 import { getEventStatus } from "@/lib/event";
 import CountdownCard from "@/components/CountdownCard";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 
 export default async function HomePage() {
   const { live, next, submissionsOpen } = await getEventStatus();
