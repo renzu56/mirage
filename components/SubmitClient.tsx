@@ -28,6 +28,41 @@ export default function SubmitClient({
   const [sub, setSub] = useState<SubmissionRow | null>(null)
   const [saveMsg, setSaveMsg] = useState<string | null>(null)
 
+  /**
+   * HARD FIX FOR MOBILE SCROLL:
+   * If the TikTok feed page ever set body overflow hidden / touch-action none,
+   * it can persist depending on navigation/layout behavior.
+   * This resets the page to be scrollable.
+   */
+  useEffect(() => {
+    const body = document.body
+    const html = document.documentElement
+
+    const prev = {
+      bodyOverflow: body.style.overflow,
+      bodyPosition: body.style.position,
+      bodyTouchAction: (body.style as any).touchAction ?? '',
+      htmlOverflow: html.style.overflow,
+      htmlTouchAction: (html.style as any).touchAction ?? '',
+    }
+
+    body.style.overflow = 'auto'
+    body.style.position = 'static'
+    ;(body.style as any).touchAction = 'pan-y'
+
+    html.style.overflow = 'auto'
+    ;(html.style as any).touchAction = 'pan-y'
+
+    return () => {
+      body.style.overflow = prev.bodyOverflow
+      body.style.position = prev.bodyPosition
+      ;(body.style as any).touchAction = prev.bodyTouchAction
+
+      html.style.overflow = prev.htmlOverflow
+      ;(html.style as any).touchAction = prev.htmlTouchAction
+    }
+  }, [])
+
   // ---- auth bootstrap ----
   useEffect(() => {
     let mounted = true
@@ -176,8 +211,13 @@ export default function SubmitClient({
   }
 
   return (
-    // ✅ Mobile fix: allow scrolling, don’t clip content
-    <main className="min-h-[100dvh] w-full overflow-y-auto overflow-x-hidden p-4 pb-[calc(env(safe-area-inset-bottom)+16px)]">
+    <main
+      className="min-h-[100dvh] w-full overflow-x-hidden overflow-y-auto p-4 pb-[calc(env(safe-area-inset-bottom)+16px)]"
+      style={{
+        WebkitOverflowScrolling: 'touch',
+        touchAction: 'pan-y',
+      }}
+    >
       <div className="mx-auto w-full max-w-2xl">
         <div className="flex items-center justify-between gap-3">
           <div className="aero-glass rounded-3xl px-4 py-3">

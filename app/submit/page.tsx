@@ -1,9 +1,9 @@
 import Link from 'next/link'
 import { getEventStatus } from '@/lib/event'
 import SubmitClient from '@/components/SubmitClient'
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 export default async function SubmitPage() {
   const { submissionsOpen, live, next } = await getEventStatus()
