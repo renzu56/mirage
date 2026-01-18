@@ -24,6 +24,31 @@ type Props = {
   onLoaded?: () => void;
 };
 
+function nonEmpty(s: string | null | undefined) {
+  return typeof s === "string" && s.trim().length > 0;
+}
+
+function normalizeUrl(raw: string) {
+  let u = raw.trim();
+  if (!u) return "";
+
+  // block unsafe schemes
+  if (/^(javascript|data):/i.test(u)) return "";
+
+  // protocol-relative URLs like //open.spotify.com/...
+  if (/^\/\//.test(u)) return `https:${u}`;
+
+  // accidental relative paths like /open.spotify.com/...
+  u = u.replace(/^\/+/, "");
+
+  // already absolute
+  if (/^https?:\/\//i.test(u)) return u;
+
+  // add scheme
+  return `https://${u}`;
+}
+
+
 function IconHeart({ filled }: { filled: boolean }) {
   return (
     <svg
@@ -164,19 +189,31 @@ export function VideoCardSound({
   const { soundOn, audioUnlocked, setSoundOn, unlockAudio } = useSound();
   const shouldUnmute = soundOn && audioUnlocked;
 
-  const hasLinks = useMemo(
-    () => Boolean(instagramUrl || spotifyUrl || soundcloudUrl),
-    [instagramUrl, spotifyUrl, soundcloudUrl]
+  const descText = useMemo(() => (description ?? "").trim(), [description]);
+
+  const spotifyHref = useMemo(
+    () => (nonEmpty(spotifyUrl) ? normalizeUrl(spotifyUrl as string) : ""),
+    [spotifyUrl]
+  );
+  const soundcloudHref = useMemo(
+    () => (nonEmpty(soundcloudUrl) ? normalizeUrl(soundcloudUrl as string) : ""),
+    [soundcloudUrl]
+  );
+  const instagramHref = useMemo(
+    () => (nonEmpty(instagramUrl) ? normalizeUrl(instagramUrl as string) : ""),
+    [instagramUrl]
   );
 
-  // Mute/unmute without restarting the video
+  const hasLinks = Boolean(spotifyHref || soundcloudHref || instagramHref);
+
+  // mute/unmute without restarting
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
     v.muted = !shouldUnmute;
   }, [shouldUnmute]);
 
-  // Load/play only when src/active/preload changes (not when sound changes)
+  // load/play only when src/active/preload changes
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
@@ -237,7 +274,7 @@ export function VideoCardSound({
         onLoadedData={() => onLoaded?.()}
       />
 
-      {/* Tap layer BELOW overlays */}
+      {/* tap layer */}
       <div
         className="absolute inset-0 z-10"
         onClick={(e) => {
@@ -246,15 +283,15 @@ export function VideoCardSound({
         }}
       />
 
-      {/* Title */}
+      {/* title */}
       {title ? (
-        <div className="pointer-events-none absolute left-3 top-3 z-30 rounded-full bg-black/50 px-3 py-1 text-xs text-white">
+        <div className="pointer-events-none absolute left-3 top-3 z-40 rounded-full bg-black/50 px-3 py-1 text-xs text-white">
           {title}
         </div>
       ) : null}
 
-      {/* Right controls */}
-      <div className="pointer-events-auto absolute right-3 bottom-20 z-30 flex flex-col items-center gap-4">
+      {/* right controls */}
+      <div className="pointer-events-auto absolute right-3 bottom-20 z-40 flex flex-col items-center gap-4">
         <button
           type="button"
           className="flex flex-col items-center text-white"
@@ -288,11 +325,11 @@ export function VideoCardSound({
         </button>
       </div>
 
-      {/* Bottom-left description + links */}
-      {(description || hasLinks) ? (
-        <div className="absolute left-3 right-16 bottom-3 z-30">
+      {/* bottom-left overlays */}
+      {(descText.length > 0 || hasLinks) ? (
+        <div className="absolute left-3 right-16 bottom-3 z-40">
           <div className="space-y-2">
-            {description ? <ExpandableDescription text={description} /> : null}
+            {descText.length > 0 ? <ExpandableDescription text={descText} /> : null}
 
             {hasLinks ? (
               <div
@@ -301,9 +338,9 @@ export function VideoCardSound({
                 onTouchStart={(e) => e.stopPropagation()}
                 onClick={(e) => e.stopPropagation()}
               >
-                {instagramUrl ? <LinkChip href={instagramUrl} label="Instagram" /> : null}
-                {spotifyUrl ? <LinkChip href={spotifyUrl} label="Spotify" /> : null}
-                {soundcloudUrl ? <LinkChip href={soundcloudUrl} label="SoundCloud" /> : null}
+                {instagramHref ? <LinkChip href={instagramHref} label="Instagram" /> : null}
+                {spotifyHref ? <LinkChip href={spotifyHref} label="Spotify" /> : null}
+                {soundcloudHref ? <LinkChip href={soundcloudHref} label="SoundCloud" /> : null}
               </div>
             ) : null}
           </div>
@@ -311,7 +348,7 @@ export function VideoCardSound({
       ) : null}
 
       {paused ? (
-        <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center">
+        <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center">
           <div className="rounded-full bg-black/55 px-4 py-2 text-sm text-white">Pause</div>
         </div>
       ) : null}
