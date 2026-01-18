@@ -5,8 +5,8 @@ import { getFeedForEvent } from "@/lib/feed";
 import { SoundProvider } from "@/components/SoundProvider";
 
 // Next.js flag (muss "dynamic" heißen)
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 
 // ✅ SSR aus für den Feed

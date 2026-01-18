@@ -29,10 +29,8 @@ export default function SubmitClient({
   const [saveMsg, setSaveMsg] = useState<string | null>(null)
 
   /**
-   * HARD FIX FOR MOBILE SCROLL:
-   * If the TikTok feed page ever set body overflow hidden / touch-action none,
-   * it can persist depending on navigation/layout behavior.
-   * This resets the page to be scrollable.
+   * Mobile hard reset: if another page (feed) ever set body overflow hidden /
+   * touch-action none, it can persist. Reset here so Submit page scrolls/taps work.
    */
   useEffect(() => {
     const body = document.body
@@ -48,10 +46,10 @@ export default function SubmitClient({
 
     body.style.overflow = 'auto'
     body.style.position = 'static'
-    ;(body.style as any).touchAction = 'pan-y'
+    ;(body.style as any).touchAction = 'auto'
 
     html.style.overflow = 'auto'
-    ;(html.style as any).touchAction = 'pan-y'
+    ;(html.style as any).touchAction = 'auto'
 
     return () => {
       body.style.overflow = prev.bodyOverflow
@@ -173,6 +171,14 @@ export default function SubmitClient({
     }
   }
 
+  /**
+   * Direct-to-Supabase Storage signed upload.
+   * Fixes Netlify 500 for larger videos and supports MP4 + MOV (iOS).
+   *
+   * Requires /api/upload-video to return:
+   * { bucket, path, token, contentType }
+   * and that your server route uses createSignedUploadUrl().
+   */
   const uploadVideo = async (file: File) => {
     if (!sub) return
     setBusy(true)
@@ -181,20 +187,62 @@ export default function SubmitClient({
     try {
       if (!token) throw new Error('No login token found. Please reload the page.')
 
-      const form = new FormData()
-      form.append('file', file)
-      form.append('eventId', eventId)
+      const name = file.name || 'upload'
+      const lower = name.toLowerCase()
 
-      const res = await fetch('/api/upload-video', {
+      const guessedType =
+        file.type ||
+        (lower.endsWith('.mov')
+          ? 'video/quicktime'
+          : lower.endsWith('.mp4')
+          ? 'video/mp4'
+          : '')
+
+      if (guessedType !== 'video/mp4' && guessedType !== 'video/quicktime') {
+        throw new Error('Unsupported file. Please upload MP4 or MOV.')
+      }
+
+      // 1) Init signed upload on server
+      const initRes = await fetch('/api/upload-video', {
         method: 'POST',
-        headers: { authorization: `Bearer ${token}` },
-        body: form,
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          eventId,
+          filename: name,
+          contentType: guessedType,
+        }),
+        cache: 'no-store',
       })
 
-      const json = await res.json()
-      if (!res.ok) throw new Error(json?.error ?? 'Upload failed')
+      const initJson = await initRes.json().catch(() => ({} as any))
+      if (!initRes.ok) throw new Error(initJson?.error ?? 'Failed to start upload')
 
-      await save({ video_path: json.path, published: true })
+      const { bucket, path, token: uploadToken, contentType } = initJson as {
+        bucket: string
+        path: string
+        token: string
+        contentType?: string
+      }
+
+      // 2) Upload directly to Storage
+      const { error: upErr } = await sb.storage
+        .from(bucket)
+        .uploadToSignedUrl(path, uploadToken, file, {
+          upsert: true,
+          contentType: contentType || guessedType || 'video/mp4',
+          cacheControl: '3600',
+        })
+
+      if (upErr) throw new Error(upErr.message)
+
+      // 3) Persist path to submission row
+      await save({ video_path: path, published: true })
+
+      setSaveMsg('Uploaded ✓')
+      setTimeout(() => setSaveMsg(null), 1500)
     } catch (e: any) {
       setSaveMsg(e?.message ?? 'Upload failed')
     } finally {
@@ -211,13 +259,8 @@ export default function SubmitClient({
   }
 
   return (
-    <main
-      className="min-h-[100dvh] w-full overflow-x-hidden overflow-y-auto p-4 pb-[calc(env(safe-area-inset-bottom)+16px)]"
-      style={{
-        WebkitOverflowScrolling: 'touch',
-        touchAction: 'pan-y',
-      }}
-    >
+    // IMPORTANT: no nested scroll container on iOS; let body scroll.
+    <main className="min-h-[100dvh] w-full overflow-x-hidden p-4 pb-[calc(env(safe-area-inset-bottom)+16px)]">
       <div className="mx-auto w-full max-w-2xl">
         <div className="flex items-center justify-between gap-3">
           <div className="aero-glass rounded-3xl px-4 py-3">
@@ -244,6 +287,7 @@ export default function SubmitClient({
                 className="w-full rounded-2xl border border-white/60 bg-white/50 px-4 py-3 text-sm font-semibold tracking-widest outline-none"
               />
               <button
+                type="button"
                 disabled={busy || code.trim().length < 4}
                 onClick={redeem}
                 className="aero-btn rounded-2xl px-4 py-3 text-sm font-semibold"
@@ -264,7 +308,8 @@ export default function SubmitClient({
             <div className="aero-glass rounded-3xl p-6">
               <div className="text-lg font-semibold">Your submission</div>
               <p className="mt-1 text-sm text-black/70">
-                Fill in the details, upload a video, done. When the event starts, your video becomes available in the feed.
+                Fill in the details, upload a video, done. When the event starts, your video becomes available in the
+                feed.
               </p>
 
               <FormRow label="Artist / Act name">
@@ -310,6 +355,7 @@ export default function SubmitClient({
 
               <div className="mt-4 flex flex-wrap items-center gap-2">
                 <button
+                  type="button"
                   disabled={busy}
                   onClick={() =>
                     save({
@@ -326,6 +372,7 @@ export default function SubmitClient({
                 </button>
 
                 <button
+                  type="button"
                   disabled={busy}
                   onClick={() => save({ published: true })}
                   className="aero-btn rounded-2xl px-4 py-3 text-sm font-semibold"
@@ -334,6 +381,7 @@ export default function SubmitClient({
                 </button>
 
                 <button
+                  type="button"
                   disabled={busy}
                   onClick={() => save({ published: false })}
                   className="aero-btn rounded-2xl px-4 py-3 text-sm font-semibold"
@@ -345,7 +393,7 @@ export default function SubmitClient({
               </div>
 
               <div className="mt-6">
-                <div className="text-sm font-semibold">Video upload (mp4)</div>
+                <div className="text-sm font-semibold">Video upload (mp4 / mov)</div>
                 <p className="mt-1 text-xs text-black/60">
                   Tip: 9:16, under 50 MB (free-tier friendly). Bucket is private; live feed uses signed URLs.
                 </p>
@@ -353,7 +401,7 @@ export default function SubmitClient({
                 <input
                   disabled={busy}
                   type="file"
-                  accept="video/mp4,video/quicktime,video/*"
+                  accept=".mp4,.mov,video/mp4,video/quicktime"
                   onChange={(e) => {
                     const f = e.target.files?.[0]
                     if (f) void uploadVideo(f)
