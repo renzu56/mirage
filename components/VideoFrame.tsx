@@ -1,12 +1,16 @@
 import React from "react";
 
 /**
- * Full-screen (slide-sized) frame for TikTok style.
- * Keeps layout consistent and ensures overlays (desc/links) are always visible.
+ * Visual container for a single TikTok-style video.
+ * Intentionally NOT full-screen: keeps big videos from feeling cropped/overwhelming.
  */
 export function VideoFrame({ children }: { children: React.ReactNode }) {
   return (
-    <div className="relative h-[100dvh] w-full overflow-hidden bg-black">
+    <div
+      className={
+        "relative w-[min(360px,92vw)] h-[min(640px,72vh)] overflow-hidden rounded-2xl bg-black shadow-xl"
+      }
+    >
       {children}
     </div>
   );

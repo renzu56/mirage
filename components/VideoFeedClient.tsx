@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { VideoFrame } from "@/components/VideoFrame";
 import { VideoCardSound } from "@/components/VideoCardSound";
 
@@ -31,30 +31,20 @@ function initLikeState(videos: FeedVideo[]): LikeState {
 
 function IntroSlide() {
   return (
-    <div className="h-full w-full flex items-center justify-center bg-black">
+    <div className="relative h-full w-full bg-black flex items-center justify-center">
       <div className="px-6 text-center">
         <div className="text-white text-xl font-semibold">Scroll to view videos</div>
         <div className="mt-2 text-white/70 text-sm">
-          Swipe / scroll up to start watching. This intro helps the first video load smoothly.
+          Swipe / scroll up to start watching.
         </div>
-
         <div className="mt-6 flex items-center justify-center">
           <div className="h-10 w-10 rounded-full border-2 border-white/35 border-t-transparent animate-spin" />
-        </div>
-
-        <div className="mt-6 text-white/50 text-xs">
-          Tip: enable sound with the Sound button on the right.
         </div>
       </div>
     </div>
   );
 }
 
-/**
- * TikTok-style feed using native scroll + snap.
- * We prepend an intro slide at index 0.
- * Real videos start at index 1, which gives the browser time to warm up/preload.
- */
 export function VideoFeedClient({ eventId, videos }: Props) {
   const [likes, setLikes] = useState<LikeState>(() => initLikeState(videos));
   useEffect(() => {
@@ -67,16 +57,12 @@ export function VideoFeedClient({ eventId, videos }: Props) {
     });
   }, [videos]);
 
-  // total slides = intro + videos
-  const totalSlides = videos.length + 1;
-
-  // currentIndex is the slide index INCLUDING intro:
-  // 0 = intro, 1 = first video, 2 = second video, ...
+  // slide index INCLUDING intro:
+  // 0 intro, 1 first video, 2 second video...
   const [currentIndex, setCurrentIndex] = useState(0);
-
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // Warm up: aggressively preload the first REAL video in the background.
+  // Warm up the first real video
   useEffect(() => {
     if (!videos.length) return;
     const vid = document.createElement("video");
@@ -89,7 +75,7 @@ export function VideoFeedClient({ eventId, videos }: Props) {
     } catch {}
   }, [videos]);
 
-  // IntersectionObserver for which slide is active
+  // IntersectionObserver for active slide
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -108,7 +94,7 @@ export function VideoFeedClient({ eventId, videos }: Props) {
     const slides = container.querySelectorAll<HTMLDivElement>("[data-index]");
     slides.forEach((slide) => observer.observe(slide));
     return () => observer.disconnect();
-  }, [totalSlides]);
+  }, [videos.length]);
 
   const handleLike = useCallback(
     async (id: string) => {
@@ -134,9 +120,7 @@ export function VideoFeedClient({ eventId, videos }: Props) {
             return { ...prev, [id]: { ...curr, count: data.like_count! } };
           });
         }
-      } catch {
-        // keep optimistic update
-      }
+      } catch {}
     },
     [eventId]
   );
@@ -149,29 +133,33 @@ export function VideoFeedClient({ eventId, videos }: Props) {
     );
   }
 
+  const totalSlides = videos.length + 1;
+
   return (
     <div
       ref={containerRef}
       className="relative h-[100dvh] w-full overflow-y-auto snap-y snap-mandatory"
-      style={{ overscrollBehavior: "contain" }}
+      style={{
+        overscrollBehavior: "contain",
+        WebkitOverflowScrolling: "touch",
+        touchAction: "pan-y",
+        scrollbarWidth: "none",
+      }}
     >
-      {/* INTRO SLIDE (index 0) */}
+      {/* Intro slide */}
       <div data-index={0} className="h-[100dvh] w-full snap-start flex items-center justify-center">
-        <VideoFrame>
-          <IntroSlide />
-        </VideoFrame>
+        <div className="w-full flex items-center justify-center">
+          <VideoFrame>
+            <IntroSlide />
+          </VideoFrame>
+        </div>
       </div>
 
-      {/* VIDEO SLIDES (start at index 1) */}
+      {/* Video slides */}
       {videos.map((video, idx) => {
-        const slideIndex = idx + 1; // shift by 1 because of intro
+        const slideIndex = idx + 1;
         const likeState = likes[video.id] ?? { count: Number(video.likeCount ?? 0), liked: false };
-
-        // Active if currentIndex matches the slideIndex (intro is 0)
         const isActive = currentIndex === slideIndex;
-
-        // Preload current + neighbors (relative to slides)
-        // We compare slide indices, not video indices
         const preloadType: "auto" | "metadata" =
           Math.abs(currentIndex - slideIndex) <= 1 ? "auto" : "metadata";
 
@@ -181,30 +169,39 @@ export function VideoFeedClient({ eventId, videos }: Props) {
             data-index={slideIndex}
             className="h-[100dvh] w-full snap-start flex items-center justify-center"
           >
-            <VideoFrame>
-              <VideoCardSound
-                active={isActive}
-                preload={preloadType}
-                src={video.src}
-                poster={video.poster}
-                title={video.title}
-                description={video.description}
-                spotifyUrl={video.spotifyUrl}
-                soundcloudUrl={video.soundcloudUrl}
-                instagramUrl={video.instagramUrl}
-                likeCount={likeState.count}
-                liked={likeState.liked}
-                onLike={() => handleLike(video.id)}
-              />
-            </VideoFrame>
+            <div className="w-full flex items-center justify-center">
+              <VideoFrame>
+                <VideoCardSound
+                  active={isActive}
+                  preload={preloadType}
+                  src={video.src}
+                  poster={video.poster}
+                  title={video.title}
+                  description={video.description}
+                  spotifyUrl={video.spotifyUrl}
+                  soundcloudUrl={video.soundcloudUrl}
+                  instagramUrl={video.instagramUrl}
+                  likeCount={likeState.count}
+                  liked={likeState.liked}
+                  onLike={() => handleLike(video.id)}
+                />
+              </VideoFrame>
+            </div>
           </div>
         );
       })}
 
-      {/* Slide indicator */}
+      {/* Indicator */}
       <div className="absolute right-4 top-4 px-2 py-1 rounded-lg bg-black/40 text-white/80 text-xs">
         {currentIndex + 1}/{totalSlides}
       </div>
+
+      {/* Hide scrollbar (webkit) */}
+      <style jsx>{`
+        div::-webkit-scrollbar {
+          display: none;
+        }
+      `}</style>
     </div>
   );
 }

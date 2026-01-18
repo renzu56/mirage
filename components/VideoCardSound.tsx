@@ -7,11 +7,9 @@ type Props = {
   src: string;
   poster?: string;
 
-  // feed control
   active?: boolean;
   preload?: "none" | "metadata" | "auto";
 
-  // Overlay UI
   title?: string;
   description?: string | null;
   spotifyUrl?: string | null;
@@ -22,10 +20,7 @@ type Props = {
   liked?: boolean;
   onLike?: () => void;
 
-  // IMPORTANT: gesture layer gets swipes, this only handles taps
   onTap?: () => void;
-
-  // Optional callback for spinner logic
   onLoaded?: () => void;
 };
 
@@ -103,16 +98,7 @@ function LinkChip({ href, label }: { href: string; label: string }) {
   );
 }
 
-/**
- * TikTok-style expandable description:
- * - collapsed shows a few lines + "See more"
- * - expanded becomes a scrollable overlay box
- */
-function ExpandableDescription({
-  text,
-}: {
-  text: string;
-}) {
+function ExpandableDescription({ text }: { text: string }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -138,7 +124,7 @@ function ExpandableDescription({
       ) : (
         <div className="rounded-xl bg-black/60 px-3 py-2 backdrop-blur-[2px]">
           <div
-            className="max-h-40 overflow-y-auto pr-1 text-sm text-white"
+            className="max-h-44 overflow-y-auto pr-1 text-sm text-white"
             style={{ WebkitOverflowScrolling: "touch" }}
           >
             {text}
@@ -183,14 +169,14 @@ export function VideoCardSound({
     [instagramUrl, spotifyUrl, soundcloudUrl]
   );
 
-  // Change mute without restarting playback
+  // Mute/unmute without restarting the video
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
     v.muted = !shouldUnmute;
   }, [shouldUnmute]);
 
-  // Load and play when src/active changes (NOT on sound toggle)
+  // Load/play only when src/active/preload changes (not when sound changes)
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
@@ -251,11 +237,9 @@ export function VideoCardSound({
         onLoadedData={() => onLoaded?.()}
       />
 
-      {/* Tap layer: keeps video non-interactive but allows play/pause on tap.
-          IMPORTANT: overlays below use pointer-events-auto + stopPropagation,
-          so taps on buttons/description/links won't toggle play. */}
+      {/* Tap layer BELOW overlays */}
       <div
-        className="absolute inset-0"
+        className="absolute inset-0 z-10"
         onClick={(e) => {
           e.stopPropagation();
           onTap ? onTap() : togglePlay();
@@ -264,13 +248,13 @@ export function VideoCardSound({
 
       {/* Title */}
       {title ? (
-        <div className="pointer-events-none absolute left-3 top-3 rounded-full bg-black/50 px-3 py-1 text-xs text-white">
+        <div className="pointer-events-none absolute left-3 top-3 z-30 rounded-full bg-black/50 px-3 py-1 text-xs text-white">
           {title}
         </div>
       ) : null}
 
       {/* Right controls */}
-      <div className="pointer-events-auto absolute right-3 bottom-20 flex flex-col items-center gap-4">
+      <div className="pointer-events-auto absolute right-3 bottom-20 z-30 flex flex-col items-center gap-4">
         <button
           type="button"
           className="flex flex-col items-center text-white"
@@ -304,9 +288,9 @@ export function VideoCardSound({
         </button>
       </div>
 
-      {/* Bottom-left description + links (INSIDE your card size, unchanged) */}
+      {/* Bottom-left description + links */}
       {(description || hasLinks) ? (
-        <div className="absolute left-3 right-16 bottom-3 pointer-events-none">
+        <div className="absolute left-3 right-16 bottom-3 z-30">
           <div className="space-y-2">
             {description ? <ExpandableDescription text={description} /> : null}
 
@@ -327,7 +311,7 @@ export function VideoCardSound({
       ) : null}
 
       {paused ? (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+        <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center">
           <div className="rounded-full bg-black/55 px-4 py-2 text-sm text-white">Pause</div>
         </div>
       ) : null}
