@@ -28,6 +28,10 @@ function nonEmpty(s: string | null | undefined) {
   return typeof s === "string" && s.trim().length > 0;
 }
 
+/**
+ * Ensure links always open as absolute URLs (never "mirage.dzrenzu.com/<url>").
+ * Also blocks unsafe schemes.
+ */
 function normalizeUrl(raw: string) {
   let u = raw.trim();
   if (!u) return "";
@@ -47,7 +51,6 @@ function normalizeUrl(raw: string) {
   // add scheme
   return `https://${u}`;
 }
-
 
 function IconHeart({ filled }: { filled: boolean }) {
   return (
@@ -184,7 +187,9 @@ export function VideoCardSound({
   onLoaded,
 }: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+
   const [paused, setPaused] = useState(false);
+  const [playbackError, setPlaybackError] = useState(false);
 
   const { soundOn, audioUnlocked, setSoundOn, unlockAudio } = useSound();
   const shouldUnmute = soundOn && audioUnlocked;
@@ -206,22 +211,30 @@ export function VideoCardSound({
 
   const hasLinks = Boolean(spotifyHref || soundcloudHref || instagramHref);
 
-  // mute/unmute without restarting
+  // Mute/unmute without restarting the video
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
     v.muted = !shouldUnmute;
   }, [shouldUnmute]);
 
-  // load/play only when src/active/preload changes
+  // Load/play only when src/active/preload changes (not when sound changes)
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
+
+    setPlaybackError(false);
 
     v.playsInline = true;
     v.loop = true;
     v.preload = preload;
     v.muted = !shouldUnmute;
+
+    // iOS / Safari reliability attributes
+    // @ts-ignore
+    v.webkitPlaysInline = true;
+    // @ts-ignore
+    v.disablePictureInPicture = true;
 
     if (!active) {
       v.pause();
@@ -237,8 +250,15 @@ export function VideoCardSound({
     try {
       v.load();
     } catch {}
-    v.play().catch(() => {});
-    setPaused(false);
+
+    v.play()
+      .then(() => {
+        setPaused(false);
+      })
+      .catch(() => {
+        // autoplay or decode can fail; keep UI responsive
+      });
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [src, active, preload]);
 
@@ -266,15 +286,26 @@ export function VideoCardSound({
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-black">
-      <video
-        ref={videoRef}
-        src={src}
-        poster={poster}
-        className="h-full w-full object-contain pointer-events-none"
-        onLoadedData={() => onLoaded?.()}
-      />
+      {/* iOS-safe video wrapper */}
+      <div className="absolute inset-0 flex items-center justify-center bg-black">
+        <video
+          ref={videoRef}
+          src={src}
+          poster={poster}
+          className="max-h-full max-w-full object-contain pointer-events-none"
+          playsInline
+          // @ts-ignore
+          webkitPlaysInline="true"
+          disablePictureInPicture
+          controls={false}
+          onLoadedData={() => onLoaded?.()}
+          onError={() => {
+            setPlaybackError(true);
+          }}
+        />
+      </div>
 
-      {/* tap layer */}
+      {/* Tap layer BELOW overlays */}
       <div
         className="absolute inset-0 z-10"
         onClick={(e) => {
@@ -283,14 +314,14 @@ export function VideoCardSound({
         }}
       />
 
-      {/* title */}
+      {/* Title */}
       {title ? (
         <div className="pointer-events-none absolute left-3 top-3 z-40 rounded-full bg-black/50 px-3 py-1 text-xs text-white">
           {title}
         </div>
       ) : null}
 
-      {/* right controls */}
+      {/* Right controls */}
       <div className="pointer-events-auto absolute right-3 bottom-20 z-40 flex flex-col items-center gap-4">
         <button
           type="button"
@@ -325,7 +356,7 @@ export function VideoCardSound({
         </button>
       </div>
 
-      {/* bottom-left overlays */}
+      {/* Bottom-left description + links */}
       {(descText.length > 0 || hasLinks) ? (
         <div className="absolute left-3 right-16 bottom-3 z-40">
           <div className="space-y-2">
@@ -347,6 +378,16 @@ export function VideoCardSound({
         </div>
       ) : null}
 
+      {/* Playback error overlay (common when iOS can't decode a file) */}
+      {playbackError ? (
+        <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center">
+          <div className="rounded-2xl bg-black/70 px-4 py-3 text-sm text-white">
+            This video can’t be played on this device (codec/format). Please re-upload as H.264 + AAC.
+          </div>
+        </div>
+      ) : null}
+
+      {/* Pause overlay */}
       {paused ? (
         <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center">
           <div className="rounded-full bg-black/55 px-4 py-2 text-sm text-white">Pause</div>
