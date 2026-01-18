@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSound } from "@/components/SoundProvider";
 
 type Props = {
@@ -25,7 +25,7 @@ type Props = {
   // IMPORTANT: gesture layer gets swipes, this only handles taps
   onTap?: () => void;
 
-  // optional callback for first video loading spinner
+  // Optional callback for spinner logic
   onLoaded?: () => void;
 };
 
@@ -93,7 +93,6 @@ function LinkChip({ href, label }: { href: string; label: string }) {
       target="_blank"
       rel="noreferrer"
       className="inline-flex items-center gap-1 rounded-full bg-black/55 px-2.5 py-1 text-xs text-white hover:bg-black/70"
-      // keep click working even with the gesture layer
       onPointerDown={(e) => e.stopPropagation()}
       onTouchStart={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
@@ -101,6 +100,59 @@ function LinkChip({ href, label }: { href: string; label: string }) {
       <IconLink />
       <span className="max-w-[14rem] truncate">{label}</span>
     </a>
+  );
+}
+
+/**
+ * TikTok-style expandable description:
+ * - collapsed shows a few lines + "See more"
+ * - expanded becomes a scrollable overlay box
+ */
+function ExpandableDescription({
+  text,
+}: {
+  text: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div
+      className="pointer-events-auto"
+      onPointerDown={(e) => e.stopPropagation()}
+      onTouchStart={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {!expanded ? (
+        <div className="rounded-xl bg-black/45 px-3 py-2 backdrop-blur-[2px]">
+          <div className="text-sm text-white drop-shadow-[0_1px_6px_rgba(0,0,0,0.75)] line-clamp-3">
+            {text}
+          </div>
+          <button
+            type="button"
+            className="mt-1 text-xs font-semibold text-white/80 hover:text-white"
+            onClick={() => setExpanded(true)}
+          >
+            See more
+          </button>
+        </div>
+      ) : (
+        <div className="rounded-xl bg-black/60 px-3 py-2 backdrop-blur-[2px]">
+          <div
+            className="max-h-40 overflow-y-auto pr-1 text-sm text-white"
+            style={{ WebkitOverflowScrolling: "touch" }}
+          >
+            {text}
+          </div>
+          <button
+            type="button"
+            className="mt-2 text-xs font-semibold text-white/80 hover:text-white"
+            onClick={() => setExpanded(false)}
+          >
+            See less
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -126,6 +178,11 @@ export function VideoCardSound({
   const { soundOn, audioUnlocked, setSoundOn, unlockAudio } = useSound();
   const shouldUnmute = soundOn && audioUnlocked;
 
+  const hasLinks = useMemo(
+    () => Boolean(instagramUrl || spotifyUrl || soundcloudUrl),
+    [instagramUrl, spotifyUrl, soundcloudUrl]
+  );
+
   // Change mute without restarting playback
   useEffect(() => {
     const v = videoRef.current;
@@ -133,7 +190,7 @@ export function VideoCardSound({
     v.muted = !shouldUnmute;
   }, [shouldUnmute]);
 
-  // Load/play on active change
+  // Load and play when src/active changes (NOT on sound toggle)
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
@@ -146,7 +203,6 @@ export function VideoCardSound({
     if (!active) {
       v.pause();
       setPaused(false);
-      // prefetch for neighbors
       if (preload === "auto") {
         try {
           v.load();
@@ -155,7 +211,6 @@ export function VideoCardSound({
       return;
     }
 
-    // for active clip
     try {
       v.load();
     } catch {}
@@ -196,7 +251,9 @@ export function VideoCardSound({
         onLoadedData={() => onLoaded?.()}
       />
 
-      {/* Tap layer for play/pause (keeps video pointer-events off) */}
+      {/* Tap layer: keeps video non-interactive but allows play/pause on tap.
+          IMPORTANT: overlays below use pointer-events-auto + stopPropagation,
+          so taps on buttons/description/links won't toggle play. */}
       <div
         className="absolute inset-0"
         onClick={(e) => {
@@ -212,11 +269,8 @@ export function VideoCardSound({
         </div>
       ) : null}
 
-      {/* Right-side controls (with safe-area bottom) */}
-      <div
-        className="pointer-events-auto absolute right-3 flex flex-col items-center gap-4"
-        style={{ bottom: "calc(env(safe-area-inset-bottom) + 96px)" }}
-      >
+      {/* Right controls */}
+      <div className="pointer-events-auto absolute right-3 bottom-20 flex flex-col items-center gap-4">
         <button
           type="button"
           className="flex flex-col items-center text-white"
@@ -250,25 +304,27 @@ export function VideoCardSound({
         </button>
       </div>
 
-      {/* Bottom-left description + links (this was the missing part) */}
-      <div
-        className="absolute left-3 right-16 pointer-events-none"
-        style={{ bottom: "calc(env(safe-area-inset-bottom) + 12px)" }}
-      >
-        <div className="space-y-2">
-          {description ? (
-            <div className="text-sm text-white drop-shadow-[0_1px_6px_rgba(0,0,0,0.75)]">
-              {description}
-            </div>
-          ) : null}
+      {/* Bottom-left description + links (INSIDE your card size, unchanged) */}
+      {(description || hasLinks) ? (
+        <div className="absolute left-3 right-16 bottom-3 pointer-events-none">
+          <div className="space-y-2">
+            {description ? <ExpandableDescription text={description} /> : null}
 
-          <div className="pointer-events-auto flex flex-wrap gap-2">
-            {instagramUrl ? <LinkChip href={instagramUrl} label="Instagram" /> : null}
-            {spotifyUrl ? <LinkChip href={spotifyUrl} label="Spotify" /> : null}
-            {soundcloudUrl ? <LinkChip href={soundcloudUrl} label="SoundCloud" /> : null}
+            {hasLinks ? (
+              <div
+                className="pointer-events-auto flex flex-wrap gap-2"
+                onPointerDown={(e) => e.stopPropagation()}
+                onTouchStart={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {instagramUrl ? <LinkChip href={instagramUrl} label="Instagram" /> : null}
+                {spotifyUrl ? <LinkChip href={spotifyUrl} label="Spotify" /> : null}
+                {soundcloudUrl ? <LinkChip href={soundcloudUrl} label="SoundCloud" /> : null}
+              </div>
+            ) : null}
           </div>
         </div>
-      </div>
+      ) : null}
 
       {paused ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
