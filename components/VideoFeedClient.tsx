@@ -34,9 +34,7 @@ function IntroSlide() {
     <div className="relative h-full w-full bg-black flex items-center justify-center">
       <div className="px-6 text-center">
         <div className="text-white text-xl font-semibold">Scroll to view videos</div>
-        <div className="mt-2 text-white/70 text-sm">
-          Swipe / scroll up to start watching.
-        </div>
+        <div className="mt-2 text-white/70 text-sm">Swipe / scroll up to start watching.</div>
         <div className="mt-6 flex items-center justify-center">
           <div className="h-10 w-10 rounded-full border-2 border-white/35 border-t-transparent animate-spin" />
         </div>
@@ -50,19 +48,16 @@ export function VideoFeedClient({ eventId, videos }: Props) {
   useEffect(() => {
     setLikes((prev) => {
       const next: LikeState = { ...prev };
-      for (const v of videos) {
-        if (!next[v.id]) next[v.id] = { count: Number(v.likeCount ?? 0), liked: false };
-      }
+      for (const v of videos) if (!next[v.id]) next[v.id] = { count: Number(v.likeCount ?? 0), liked: false };
       return next;
     });
   }, [videos]);
 
-  // slide index INCLUDING intro:
-  // 0 intro, 1 first video, 2 second video...
+  // 0 = intro, 1..n = videos
   const [currentIndex, setCurrentIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // Warm up the first real video
+  // Warm up first real video
   useEffect(() => {
     if (!videos.length) return;
     const vid = document.createElement("video");
@@ -75,7 +70,7 @@ export function VideoFeedClient({ eventId, videos }: Props) {
     } catch {}
   }, [videos]);
 
-  // IntersectionObserver for active slide
+  // Active slide detection
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -126,11 +121,7 @@ export function VideoFeedClient({ eventId, videos }: Props) {
   );
 
   if (!videos.length) {
-    return (
-      <div className="w-full flex items-center justify-center text-sm opacity-70">
-        No videos
-      </div>
-    );
+    return <div className="w-full flex items-center justify-center text-sm opacity-70">No videos</div>;
   }
 
   const totalSlides = videos.length + 1;
@@ -146,30 +137,27 @@ export function VideoFeedClient({ eventId, videos }: Props) {
         scrollbarWidth: "none",
       }}
     >
-      {/* Intro slide */}
-      <div data-index={0} className="h-[100dvh] w-full snap-start flex items-center justify-center">
-        <div className="w-full flex items-center justify-center">
+      {/* INTRO */}
+      <div data-index={0} className="h-[100dvh] w-full snap-start">
+        <div className="pt-2 w-full">
           <VideoFrame>
             <IntroSlide />
           </VideoFrame>
         </div>
       </div>
 
-      {/* Video slides */}
+      {/* VIDEOS */}
       {videos.map((video, idx) => {
         const slideIndex = idx + 1;
         const likeState = likes[video.id] ?? { count: Number(video.likeCount ?? 0), liked: false };
         const isActive = currentIndex === slideIndex;
+
         const preloadType: "auto" | "metadata" =
           Math.abs(currentIndex - slideIndex) <= 1 ? "auto" : "metadata";
 
         return (
-          <div
-            key={video.id}
-            data-index={slideIndex}
-            className="h-[100dvh] w-full snap-start flex items-center justify-center"
-          >
-            <div className="w-full flex items-center justify-center">
+          <div key={video.id} data-index={slideIndex} className="h-[100dvh] w-full snap-start">
+            <div className="pt-2 w-full">
               <VideoFrame>
                 <VideoCardSound
                   active={isActive}
@@ -191,12 +179,11 @@ export function VideoFeedClient({ eventId, videos }: Props) {
         );
       })}
 
-      {/* Indicator */}
+      {/* indicator */}
       <div className="absolute right-4 top-4 px-2 py-1 rounded-lg bg-black/40 text-white/80 text-xs">
         {currentIndex + 1}/{totalSlides}
       </div>
 
-      {/* Hide scrollbar (webkit) */}
       <style jsx>{`
         div::-webkit-scrollbar {
           display: none;
