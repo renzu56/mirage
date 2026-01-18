@@ -7,6 +7,16 @@ import { useRouter } from 'next/navigation'
 import { supabaseBrowser } from '@/lib/supabase/browser'
 import type { SubmissionRow } from '@/lib/types'
 
+function isIOSDevice() {
+  if (typeof navigator === 'undefined') return false
+  const ua = navigator.userAgent
+  // iPadOS 13+ reports "Macintosh" but has touch points
+  const iOS =
+    /iPad|iPhone|iPod/.test(ua) ||
+    (/Macintosh/.test(ua) && (navigator as any).maxTouchPoints > 1)
+  return iOS
+}
+
 export default function SubmitClient({
   eventId,
   eventTitle,
@@ -29,8 +39,10 @@ export default function SubmitClient({
   const [saveMsg, setSaveMsg] = useState<string | null>(null)
 
   /**
-   * Mobile hard reset: if another page (feed) ever set body overflow hidden /
-   * touch-action none, it can persist. Reset here so Submit page scrolls/taps work.
+   * iOS SAFARI SCROLL UNLOCKER
+   * - Your feed page likely sets body overflow hidden / touch-action none.
+   * - On iOS, navigation and BFCache can cause those styles to "stick".
+   * - This re-unlocks scroll on mount AND on pageshow/visibility/focus/resize.
    */
   useEffect(() => {
     const body = document.body
@@ -38,25 +50,76 @@ export default function SubmitClient({
 
     const prev = {
       bodyOverflow: body.style.overflow,
+      bodyOverflowY: body.style.overflowY,
       bodyPosition: body.style.position,
+      bodyHeight: body.style.height,
       bodyTouchAction: (body.style as any).touchAction ?? '',
       htmlOverflow: html.style.overflow,
+      htmlOverflowY: html.style.overflowY,
+      htmlHeight: html.style.height,
       htmlTouchAction: (html.style as any).touchAction ?? '',
     }
 
-    body.style.overflow = 'auto'
-    body.style.position = 'static'
-    ;(body.style as any).touchAction = 'auto'
+    const unlock = () => {
+      // Always allow body scrolling on submit page
+      body.style.overflow = 'auto'
+      body.style.overflowY = 'auto'
+      body.style.position = 'static'
+      body.style.height = 'auto'
+      ;(body.style as any).touchAction = 'auto'
 
-    html.style.overflow = 'auto'
-    ;(html.style as any).touchAction = 'auto'
+      html.style.overflow = 'auto'
+      html.style.overflowY = 'auto'
+      html.style.height = 'auto'
+      ;(html.style as any).touchAction = 'auto'
+    }
+
+    unlock()
+    // extra tick helps after route transitions / keyboard state changes
+    const t = window.setTimeout(unlock, 0)
+
+    // iOS only: keep re-applying on events that commonly break scrolling
+    const ios = isIOSDevice()
+    const onPageShow = () => unlock()
+    const onVis = () => {
+      if (document.visibilityState === 'visible') unlock()
+    }
+    const onFocusIn = () => {
+      // after focusing inputs, iOS can freeze scrolling; unlock next tick
+      window.setTimeout(unlock, 0)
+    }
+    const onResize = () => {
+      // keyboard open/close
+      window.setTimeout(unlock, 0)
+    }
+
+    if (ios) {
+      window.addEventListener('pageshow', onPageShow)
+      document.addEventListener('visibilitychange', onVis)
+      document.addEventListener('focusin', onFocusIn)
+      window.addEventListener('resize', onResize)
+    }
 
     return () => {
+      window.clearTimeout(t)
+
+      if (ios) {
+        window.removeEventListener('pageshow', onPageShow)
+        document.removeEventListener('visibilitychange', onVis)
+        document.removeEventListener('focusin', onFocusIn)
+        window.removeEventListener('resize', onResize)
+      }
+
+      // restore previous styles
       body.style.overflow = prev.bodyOverflow
+      body.style.overflowY = prev.bodyOverflowY
       body.style.position = prev.bodyPosition
+      body.style.height = prev.bodyHeight
       ;(body.style as any).touchAction = prev.bodyTouchAction
 
       html.style.overflow = prev.htmlOverflow
+      html.style.overflowY = prev.htmlOverflowY
+      html.style.height = prev.htmlHeight
       ;(html.style as any).touchAction = prev.htmlTouchAction
     }
   }, [])
@@ -172,12 +235,10 @@ export default function SubmitClient({
   }
 
   /**
-   * Direct-to-Supabase Storage signed upload.
-   * Fixes Netlify 500 for larger videos and supports MP4 + MOV (iOS).
-   *
-   * Requires /api/upload-video to return:
+   * NOTE:
+   * This assumes you already updated your /api/upload-video route to return:
    * { bucket, path, token, contentType }
-   * and that your server route uses createSignedUploadUrl().
+   * and that you are using uploadToSignedUrl() client-side.
    */
   const uploadVideo = async (file: File) => {
     if (!sub) return
@@ -202,7 +263,6 @@ export default function SubmitClient({
         throw new Error('Unsupported file. Please upload MP4 or MOV.')
       }
 
-      // 1) Init signed upload on server
       const initRes = await fetch('/api/upload-video', {
         method: 'POST',
         headers: {
@@ -227,7 +287,6 @@ export default function SubmitClient({
         contentType?: string
       }
 
-      // 2) Upload directly to Storage
       const { error: upErr } = await sb.storage
         .from(bucket)
         .uploadToSignedUrl(path, uploadToken, file, {
@@ -238,7 +297,6 @@ export default function SubmitClient({
 
       if (upErr) throw new Error(upErr.message)
 
-      // 3) Persist path to submission row
       await save({ video_path: path, published: true })
 
       setSaveMsg('Uploaded ✓')
@@ -259,7 +317,7 @@ export default function SubmitClient({
   }
 
   return (
-    // IMPORTANT: no nested scroll container on iOS; let body scroll.
+    // IMPORTANT: no nested scroll container; let body scroll.
     <main className="min-h-[100dvh] w-full overflow-x-hidden p-4 pb-[calc(env(safe-area-inset-bottom)+16px)]">
       <div className="mx-auto w-full max-w-2xl">
         <div className="flex items-center justify-between gap-3">
