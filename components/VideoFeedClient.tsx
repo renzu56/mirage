@@ -45,19 +45,22 @@ function IntroSlide() {
 
 export function VideoFeedClient({ eventId, videos }: Props) {
   const [likes, setLikes] = useState<LikeState>(() => initLikeState(videos));
+
   useEffect(() => {
     setLikes((prev) => {
       const next: LikeState = { ...prev };
-      for (const v of videos) if (!next[v.id]) next[v.id] = { count: Number(v.likeCount ?? 0), liked: false };
+      for (const v of videos) {
+        if (!next[v.id]) next[v.id] = { count: Number(v.likeCount ?? 0), liked: false };
+      }
       return next;
     });
   }, [videos]);
 
-  // 0 = intro, 1..n = videos
+  // Slide index including intro: 0 intro, 1 first video, ...
   const [currentIndex, setCurrentIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // Warm up first real video
+  // Warm up first video (helps some devices start faster)
   useEffect(() => {
     if (!videos.length) return;
     const vid = document.createElement("video");
@@ -70,7 +73,7 @@ export function VideoFeedClient({ eventId, videos }: Props) {
     } catch {}
   }, [videos]);
 
-  // Active slide detection
+  // IntersectionObserver for active slide
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -88,6 +91,7 @@ export function VideoFeedClient({ eventId, videos }: Props) {
 
     const slides = container.querySelectorAll<HTMLDivElement>("[data-index]");
     slides.forEach((slide) => observer.observe(slide));
+
     return () => observer.disconnect();
   }, [videos.length]);
 
@@ -121,7 +125,11 @@ export function VideoFeedClient({ eventId, videos }: Props) {
   );
 
   if (!videos.length) {
-    return <div className="w-full flex items-center justify-center text-sm opacity-70">No videos</div>;
+    return (
+      <div className="w-full h-[100dvh] flex items-center justify-center text-sm opacity-70 bg-black text-white">
+        No videos
+      </div>
+    );
   }
 
   const totalSlides = videos.length + 1;
@@ -133,20 +141,19 @@ export function VideoFeedClient({ eventId, videos }: Props) {
       style={{
         overscrollBehavior: "contain",
         WebkitOverflowScrolling: "touch",
-        touchAction: "pan-y",
         scrollbarWidth: "none",
       }}
     >
-      {/* INTRO */}
-      <div data-index={0} className="h-[100dvh] w-full snap-start">
-        <div className="pt-2 w-full">
+      {/* Intro */}
+      <div data-index={0} className="h-[100dvh] w-full snap-start flex items-center justify-center">
+        <div className="h-[78svh] w-full flex items-center justify-center">
           <VideoFrame>
             <IntroSlide />
           </VideoFrame>
         </div>
       </div>
 
-      {/* VIDEOS */}
+      {/* Videos */}
       {videos.map((video, idx) => {
         const slideIndex = idx + 1;
         const likeState = likes[video.id] ?? { count: Number(video.likeCount ?? 0), liked: false };
@@ -156,8 +163,12 @@ export function VideoFeedClient({ eventId, videos }: Props) {
           Math.abs(currentIndex - slideIndex) <= 1 ? "auto" : "metadata";
 
         return (
-          <div key={video.id} data-index={slideIndex} className="h-[100dvh] w-full snap-start">
-            <div className="pt-2 w-full">
+          <div
+            key={video.id}
+            data-index={slideIndex}
+            className="h-[100dvh] w-full snap-start flex items-center justify-center"
+          >
+            <div className="h-[78svh] w-full flex items-center justify-center">
               <VideoFrame>
                 <VideoCardSound
                   active={isActive}
@@ -179,11 +190,12 @@ export function VideoFeedClient({ eventId, videos }: Props) {
         );
       })}
 
-      {/* indicator */}
+      {/* Indicator */}
       <div className="absolute right-4 top-4 px-2 py-1 rounded-lg bg-black/40 text-white/80 text-xs">
         {currentIndex + 1}/{totalSlides}
       </div>
 
+      {/* Hide scrollbar (webkit) */}
       <style jsx>{`
         div::-webkit-scrollbar {
           display: none;

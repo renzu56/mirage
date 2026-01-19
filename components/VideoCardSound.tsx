@@ -24,14 +24,6 @@ type Props = {
   onLoaded?: () => void;
 };
 
-function nonEmpty(s: string | null | undefined) {
-  return typeof s === "string" && s.trim().length > 0;
-}
-
-/**
- * Ensure links always open as absolute URLs (never "mirage.dzrenzu.com/<url>").
- * Also blocks unsafe schemes.
- */
 function normalizeUrl(raw: string) {
   let u = raw.trim();
   if (!u) return "";
@@ -39,7 +31,7 @@ function normalizeUrl(raw: string) {
   // block unsafe schemes
   if (/^(javascript|data):/i.test(u)) return "";
 
-  // protocol-relative URLs like //open.spotify.com/...
+  // protocol-relative like //open.spotify.com/...
   if (/^\/\//.test(u)) return `https:${u}`;
 
   // accidental relative paths like /open.spotify.com/...
@@ -69,14 +61,7 @@ function IconHeart({ filled }: { filled: boolean }) {
 
 function IconSound({ muted }: { muted: boolean }) {
   return (
-    <svg
-      viewBox="0 0 24 24"
-      className="h-7 w-7"
-      aria-hidden="true"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
+    <svg viewBox="0 0 24 24" className="h-7 w-7" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M11 5 6 9H3v6h3l5 4V5z" />
       {muted ? (
         <>
@@ -95,14 +80,7 @@ function IconSound({ muted }: { muted: boolean }) {
 
 function IconLink() {
   return (
-    <svg
-      viewBox="0 0 24 24"
-      className="h-5 w-5"
-      aria-hidden="true"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
+    <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M10 13a5 5 0 0 1 0-7l1.2-1.2a5 5 0 0 1 7 7L17 13" />
       <path d="M14 11a5 5 0 0 1 0 7l-1.2 1.2a5 5 0 0 1-7-7L7 11" />
     </svg>
@@ -110,11 +88,14 @@ function IconLink() {
 }
 
 function LinkChip({ href, label }: { href: string; label: string }) {
+  const out = normalizeUrl(href);
+  if (!out) return null;
+
   return (
     <a
-      href={href}
+      href={out}
       target="_blank"
-      rel="noreferrer"
+      rel="noreferrer noopener"
       className="inline-flex items-center gap-1 rounded-full bg-black/55 px-2.5 py-1 text-xs text-white hover:bg-black/70"
       onPointerDown={(e) => e.stopPropagation()}
       onTouchStart={(e) => e.stopPropagation()}
@@ -138,7 +119,15 @@ function ExpandableDescription({ text }: { text: string }) {
     >
       {!expanded ? (
         <div className="rounded-xl bg-black/45 px-3 py-2 backdrop-blur-[2px]">
-          <div className="text-sm text-white drop-shadow-[0_1px_6px_rgba(0,0,0,0.75)] line-clamp-3">
+          <div
+            className="text-sm text-white drop-shadow-[0_1px_6px_rgba(0,0,0,0.75)]"
+            style={{
+              display: "-webkit-box",
+              WebkitLineClamp: 3,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+            }}
+          >
             {text}
           </div>
           <button
@@ -151,10 +140,7 @@ function ExpandableDescription({ text }: { text: string }) {
         </div>
       ) : (
         <div className="rounded-xl bg-black/60 px-3 py-2 backdrop-blur-[2px]">
-          <div
-            className="max-h-44 overflow-y-auto pr-1 text-sm text-white"
-            style={{ WebkitOverflowScrolling: "touch" }}
-          >
+          <div className="max-h-44 overflow-y-auto pr-1 text-sm text-white" style={{ WebkitOverflowScrolling: "touch" }}>
             {text}
           </div>
           <button
@@ -187,38 +173,25 @@ export function VideoCardSound({
   onLoaded,
 }: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
-
   const [paused, setPaused] = useState(false);
   const [playbackError, setPlaybackError] = useState(false);
 
   const { soundOn, audioUnlocked, setSoundOn, unlockAudio } = useSound();
   const shouldUnmute = soundOn && audioUnlocked;
 
-  const descText = useMemo(() => (description ?? "").trim(), [description]);
-
-  const spotifyHref = useMemo(
-    () => (nonEmpty(spotifyUrl) ? normalizeUrl(spotifyUrl as string) : ""),
-    [spotifyUrl]
-  );
-  const soundcloudHref = useMemo(
-    () => (nonEmpty(soundcloudUrl) ? normalizeUrl(soundcloudUrl as string) : ""),
-    [soundcloudUrl]
-  );
-  const instagramHref = useMemo(
-    () => (nonEmpty(instagramUrl) ? normalizeUrl(instagramUrl as string) : ""),
-    [instagramUrl]
+  const hasLinks = useMemo(
+    () => Boolean(instagramUrl || spotifyUrl || soundcloudUrl),
+    [instagramUrl, spotifyUrl, soundcloudUrl]
   );
 
-  const hasLinks = Boolean(spotifyHref || soundcloudHref || instagramHref);
-
-  // Mute/unmute without restarting the video
+  // mute/unmute without restarting playback
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
     v.muted = !shouldUnmute;
   }, [shouldUnmute]);
 
-  // Load/play only when src/active/preload changes (not when sound changes)
+  // load/play only on src/active/preload changes
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
@@ -229,12 +202,6 @@ export function VideoCardSound({
     v.loop = true;
     v.preload = preload;
     v.muted = !shouldUnmute;
-
-    // iOS / Safari reliability attributes
-    // @ts-ignore
-    v.webkitPlaysInline = true;
-    // @ts-ignore
-    v.disablePictureInPicture = true;
 
     if (!active) {
       v.pause();
@@ -250,15 +217,8 @@ export function VideoCardSound({
     try {
       v.load();
     } catch {}
-
-    v.play()
-      .then(() => {
-        setPaused(false);
-      })
-      .catch(() => {
-        // autoplay or decode can fail; keep UI responsive
-      });
-
+    v.play().catch(() => {});
+    setPaused(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [src, active, preload]);
 
@@ -286,22 +246,19 @@ export function VideoCardSound({
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-black">
-      {/* iOS-safe video wrapper */}
+      {/* Video wrapper for better widescreen handling */}
       <div className="absolute inset-0 flex items-center justify-center bg-black">
         <video
           ref={videoRef}
           src={src}
           poster={poster}
-          className="max-h-full max-w-full object-contain pointer-events-none"
+          className="h-full w-full object-contain pointer-events-none"
           playsInline
           // @ts-ignore
           webkitPlaysInline="true"
           disablePictureInPicture
-          controls={false}
           onLoadedData={() => onLoaded?.()}
-          onError={() => {
-            setPlaybackError(true);
-          }}
+          onError={() => setPlaybackError(true)}
         />
       </div>
 
@@ -316,13 +273,13 @@ export function VideoCardSound({
 
       {/* Title */}
       {title ? (
-        <div className="pointer-events-none absolute left-3 top-3 z-40 rounded-full bg-black/50 px-3 py-1 text-xs text-white">
+        <div className="pointer-events-none absolute left-3 top-3 z-30 rounded-full bg-black/50 px-3 py-1 text-xs text-white">
           {title}
         </div>
       ) : null}
 
       {/* Right controls */}
-      <div className="pointer-events-auto absolute right-3 bottom-20 z-40 flex flex-col items-center gap-4">
+      <div className="pointer-events-auto absolute right-3 bottom-20 z-30 flex flex-col items-center gap-4">
         <button
           type="button"
           className="flex flex-col items-center text-white"
@@ -357,10 +314,10 @@ export function VideoCardSound({
       </div>
 
       {/* Bottom-left description + links */}
-      {(descText.length > 0 || hasLinks) ? (
-        <div className="absolute left-3 right-16 bottom-3 z-40">
+      {(description || hasLinks) ? (
+        <div className="absolute left-3 right-16 bottom-3 z-30">
           <div className="space-y-2">
-            {descText.length > 0 ? <ExpandableDescription text={descText} /> : null}
+            {description ? <ExpandableDescription text={description} /> : null}
 
             {hasLinks ? (
               <div
@@ -369,28 +326,20 @@ export function VideoCardSound({
                 onTouchStart={(e) => e.stopPropagation()}
                 onClick={(e) => e.stopPropagation()}
               >
-                {instagramHref ? <LinkChip href={instagramHref} label="Instagram" /> : null}
-                {spotifyHref ? <LinkChip href={spotifyHref} label="Spotify" /> : null}
-                {soundcloudHref ? <LinkChip href={soundcloudHref} label="SoundCloud" /> : null}
+                {instagramUrl ? <LinkChip href={instagramUrl} label="Instagram" /> : null}
+                {spotifyUrl ? <LinkChip href={spotifyUrl} label="Spotify" /> : null}
+                {soundcloudUrl ? <LinkChip href={soundcloudUrl} label="SoundCloud" /> : null}
               </div>
             ) : null}
           </div>
         </div>
       ) : null}
 
-      {/* Playback error overlay (common when iOS can't decode a file) */}
-      {playbackError ? (
-        <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center">
-          <div className="rounded-2xl bg-black/70 px-4 py-3 text-sm text-white">
-            This video can’t be played on this device (codec/format). Please re-upload as H.264 + AAC.
+      {(paused || playbackError) ? (
+        <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center">
+          <div className="rounded-full bg-black/55 px-4 py-2 text-sm text-white">
+            {playbackError ? "This video can't be played on this device" : "Pause"}
           </div>
-        </div>
-      ) : null}
-
-      {/* Pause overlay */}
-      {paused ? (
-        <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center">
-          <div className="rounded-full bg-black/55 px-4 py-2 text-sm text-white">Pause</div>
         </div>
       ) : null}
     </div>
