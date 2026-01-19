@@ -1,324 +1,248 @@
-'use client'
+"use client";
 
-import { useEffect, useMemo, useState } from 'react'
-import type { ReactNode } from 'react'
-import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { supabaseBrowser } from '@/lib/supabase/browser'
-import type { SubmissionRow } from '@/lib/types'
-
-function isIOSDevice() {
-  if (typeof navigator === 'undefined') return false
-  const ua = navigator.userAgent
-  // iPadOS 13+ reports "Macintosh" but has touch points
-  const iOS =
-    /iPad|iPhone|iPod/.test(ua) ||
-    (/Macintosh/.test(ua) && (navigator as any).maxTouchPoints > 1)
-  return iOS
-}
+import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { supabaseBrowser } from "@/lib/supabase/browser";
+import type { SubmissionRow } from "@/lib/types";
 
 export default function SubmitClient({
   eventId,
   eventTitle,
 }: {
-  eventId: string
-  eventTitle: string
+  eventId: string;
+  eventTitle: string;
 }) {
-  const router = useRouter()
-  const sb = useMemo(() => supabaseBrowser(), [])
+  const router = useRouter();
+  const sb = useMemo(() => supabaseBrowser(), []);
 
-  const [ready, setReady] = useState(false)
-  const [token, setToken] = useState<string | null>(null)
-  const [userId, setUserId] = useState<string | null>(null)
+  const [ready, setReady] = useState(false);
+  const [token, setToken] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
 
-  const [code, setCode] = useState('')
-  const [redeemError, setRedeemError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
+  const [code, setCode] = useState("");
+  const [redeemError, setRedeemError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  const [sub, setSub] = useState<SubmissionRow | null>(null)
-  const [saveMsg, setSaveMsg] = useState<string | null>(null)
+  const [sub, setSub] = useState<SubmissionRow | null>(null);
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
 
-  /**
-   * iOS SAFARI SCROLL UNLOCKER
-   * - Your feed page likely sets body overflow hidden / touch-action none.
-   * - On iOS, navigation and BFCache can cause those styles to "stick".
-   * - This re-unlocks scroll on mount AND on pageshow/visibility/focus/resize.
-   */
+  // iOS scroll “stuck” protection: undo any overflow:hidden/touchAction:none from feed pages
   useEffect(() => {
-    const body = document.body
-    const html = document.documentElement
+    const body = document.body;
+    const html = document.documentElement;
 
     const prev = {
       bodyOverflow: body.style.overflow,
-      bodyOverflowY: body.style.overflowY,
       bodyPosition: body.style.position,
-      bodyHeight: body.style.height,
-      bodyTouchAction: (body.style as any).touchAction ?? '',
+      bodyTouchAction: (body.style as any).touchAction ?? "",
       htmlOverflow: html.style.overflow,
-      htmlOverflowY: html.style.overflowY,
-      htmlHeight: html.style.height,
-      htmlTouchAction: (html.style as any).touchAction ?? '',
-    }
+      htmlTouchAction: (html.style as any).touchAction ?? "",
+    };
 
-    const unlock = () => {
-      // Always allow body scrolling on submit page
-      body.style.overflow = 'auto'
-      body.style.overflowY = 'auto'
-      body.style.position = 'static'
-      body.style.height = 'auto'
-      ;(body.style as any).touchAction = 'auto'
+    body.style.overflow = "auto";
+    body.style.position = "static";
+    (body.style as any).touchAction = "pan-y";
 
-      html.style.overflow = 'auto'
-      html.style.overflowY = 'auto'
-      html.style.height = 'auto'
-      ;(html.style as any).touchAction = 'auto'
-    }
-
-    unlock()
-    // extra tick helps after route transitions / keyboard state changes
-    const t = window.setTimeout(unlock, 0)
-
-    // iOS only: keep re-applying on events that commonly break scrolling
-    const ios = isIOSDevice()
-    const onPageShow = () => unlock()
-    const onVis = () => {
-      if (document.visibilityState === 'visible') unlock()
-    }
-    const onFocusIn = () => {
-      // after focusing inputs, iOS can freeze scrolling; unlock next tick
-      window.setTimeout(unlock, 0)
-    }
-    const onResize = () => {
-      // keyboard open/close
-      window.setTimeout(unlock, 0)
-    }
-
-    if (ios) {
-      window.addEventListener('pageshow', onPageShow)
-      document.addEventListener('visibilitychange', onVis)
-      document.addEventListener('focusin', onFocusIn)
-      window.addEventListener('resize', onResize)
-    }
+    html.style.overflow = "auto";
+    (html.style as any).touchAction = "pan-y";
 
     return () => {
-      window.clearTimeout(t)
+      body.style.overflow = prev.bodyOverflow;
+      body.style.position = prev.bodyPosition;
+      (body.style as any).touchAction = prev.bodyTouchAction;
 
-      if (ios) {
-        window.removeEventListener('pageshow', onPageShow)
-        document.removeEventListener('visibilitychange', onVis)
-        document.removeEventListener('focusin', onFocusIn)
-        window.removeEventListener('resize', onResize)
-      }
-
-      // restore previous styles
-      body.style.overflow = prev.bodyOverflow
-      body.style.overflowY = prev.bodyOverflowY
-      body.style.position = prev.bodyPosition
-      body.style.height = prev.bodyHeight
-      ;(body.style as any).touchAction = prev.bodyTouchAction
-
-      html.style.overflow = prev.htmlOverflow
-      html.style.overflowY = prev.htmlOverflowY
-      html.style.height = prev.htmlHeight
-      ;(html.style as any).touchAction = prev.htmlTouchAction
-    }
-  }, [])
+      html.style.overflow = prev.htmlOverflow;
+      (html.style as any).touchAction = prev.htmlTouchAction;
+    };
+  }, []);
 
   // ---- auth bootstrap ----
   useEffect(() => {
-    let mounted = true
-    ;(async () => {
-      const { data } = await sb.auth.getSession()
-      let session = data.session
+    let mounted = true;
+    (async () => {
+      const { data } = await sb.auth.getSession();
+      let session = data.session;
       if (!session) {
-        const r = await sb.auth.signInAnonymously()
-        session = r.data.session ?? null
+        const r = await sb.auth.signInAnonymously();
+        session = r.data.session ?? null;
       }
-      if (!mounted) return
-      setToken(session?.access_token ?? null)
-      setUserId(session?.user?.id ?? null)
-      setReady(true)
-    })()
-    return () => {
-      mounted = false
-    }
-  }, [sb])
+      if (!mounted) return;
 
-  // ---- always load submission deterministically (event + user) ----
+      setToken(session?.access_token ?? null);
+      setUserId(session?.user?.id ?? null);
+      setReady(true);
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [sb]);
+
+  // ---- load submission deterministically (event + user) ----
   const loadSubmission = async (uid: string) => {
     const { data, error } = await sb
-      .from('submissions')
+      .from("submissions")
       .select(
-        'id,event_id,user_id,display_name,description,spotify_url,soundcloud_url,instagram_url,video_path,published'
+        "id,event_id,user_id,display_name,description,spotify_url,soundcloud_url,instagram_url,video_path,published"
       )
-      .eq('event_id', eventId)
-      .eq('user_id', uid)
-      .maybeSingle()
+      .eq("event_id", eventId)
+      .eq("user_id", uid)
+      .maybeSingle();
 
-    if (!error && data) setSub(data as SubmissionRow)
-    if (!data) setSub(null)
-  }
+    if (error) console.error("LOAD SUBMISSION ERROR:", error);
+
+    if (!error && data) setSub(data as SubmissionRow);
+    if (!data) setSub(null);
+  };
 
   useEffect(() => {
-    if (!ready) return
-    if (!userId) return
-    void loadSubmission(userId)
+    if (!ready) return;
+    if (!userId) return;
+    void loadSubmission(userId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, userId, eventId])
+  }, [ready, userId, eventId]);
 
   // ---- redeem ----
   const redeem = async () => {
-    setRedeemError(null)
-    setSaveMsg(null)
+    setRedeemError(null);
+    setSaveMsg(null);
 
-    const trimmed = code.trim().toUpperCase()
+    const trimmed = code.trim().toUpperCase();
     if (trimmed.length < 4) {
-      setRedeemError('Please enter a valid code.')
-      return
+      setRedeemError("Please enter a valid code.");
+      return;
     }
     if (!token || !userId) {
-      setRedeemError('No login token found. Please reload the page.')
-      return
+      setRedeemError("No login token found. Please reload the page.");
+      return;
     }
 
-    setBusy(true)
+    setBusy(true);
     try {
-      const res = await fetch('/api/redeem', {
-        method: 'POST',
+      const res = await fetch("/api/redeem", {
+        method: "POST",
         headers: {
-          'content-type': 'application/json',
+          "content-type": "application/json",
           authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ code: trimmed }),
-        cache: 'no-store',
-      })
+        cache: "no-store",
+      });
 
-      const json = await res.json().catch(() => ({} as any))
-      if (!res.ok) throw new Error(json?.error ?? 'Invalid code')
+      const json = await res.json().catch(() => ({} as any));
+      if (!res.ok) throw new Error(json?.error ?? "Invalid code");
 
-      await loadSubmission(userId)
-      router.refresh()
+      await loadSubmission(userId);
+      router.refresh();
 
-      setSaveMsg('Code redeemed ✓')
-      setTimeout(() => setSaveMsg(null), 1500)
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Invalid code'
-      setRedeemError(msg)
+      setSaveMsg("Code redeemed ✓");
+      setTimeout(() => setSaveMsg(null), 1500);
+    } catch (e: any) {
+      console.error("REDEEM FAILED:", e);
+      setRedeemError(e?.message ?? "Invalid code");
     } finally {
-      setBusy(false)
+      setBusy(false);
     }
-  }
+  };
 
+  // ---- save text fields ----
   const save = async (patch: Partial<SubmissionRow>) => {
-    if (!sub) return
-    setBusy(true)
-    setSaveMsg(null)
+    if (!sub) return;
+    setBusy(true);
+    setSaveMsg(null);
+
     try {
       const { data, error } = await sb
-        .from('submissions')
+        .from("submissions")
         .update(patch)
-        .eq('id', sub.id)
+        .eq("id", sub.id)
         .select(
-          'id,event_id,user_id,display_name,description,spotify_url,soundcloud_url,instagram_url,video_path,published'
+          "id,event_id,user_id,display_name,description,spotify_url,soundcloud_url,instagram_url,video_path,published"
         )
-        .single()
-      if (error) throw error
-      setSub(data as SubmissionRow)
-      setSaveMsg('Saved ✓')
-      setTimeout(() => setSaveMsg(null), 1500)
-      router.refresh()
-    } catch {
-      setSaveMsg('Error while saving')
-    } finally {
-      setBusy(false)
-    }
-  }
+        .single();
 
-  /**
-   * NOTE:
-   * This assumes you already updated your /api/upload-video route to return:
-   * { bucket, path, token, contentType }
-   * and that you are using uploadToSignedUrl() client-side.
-   */
+      if (error) {
+        console.error("SAVE ERROR:", error);
+        throw error;
+      }
+
+      setSub(data as SubmissionRow);
+      setSaveMsg("Saved ✓");
+      setTimeout(() => setSaveMsg(null), 1500);
+      router.refresh();
+    } catch (e: any) {
+      console.error("SAVE FAILED:", e);
+      setSaveMsg(e?.message ?? "Error while saving");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // ---- upload video (mp4 + mov) ----
   const uploadVideo = async (file: File) => {
-    if (!sub) return
-    setBusy(true)
-    setSaveMsg(null)
+    if (!sub) {
+      setSaveMsg("Redeem a code first.");
+      return;
+    }
+    setBusy(true);
+    setSaveMsg(null);
 
     try {
-      if (!token) throw new Error('No login token found. Please reload the page.')
+      if (!token) throw new Error("No login token found. Please reload the page.");
 
-      const name = file.name || 'upload'
-      const lower = name.toLowerCase()
+      const form = new FormData();
+      form.append("file", file);
+      form.append("eventId", eventId);
 
-      const guessedType =
-        file.type ||
-        (lower.endsWith('.mov')
-          ? 'video/quicktime'
-          : lower.endsWith('.mp4')
-          ? 'video/mp4'
-          : '')
+      const res = await fetch("/api/upload-video", {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}` },
+        body: form,
+      });
 
-      if (guessedType !== 'video/mp4' && guessedType !== 'video/quicktime') {
-        throw new Error('Unsupported file. Please upload MP4 or MOV.')
+      const json = await res.json().catch(() => ({} as any));
+      if (!res.ok) {
+        console.error("UPLOAD API ERROR:", json);
+        throw new Error(json?.error ?? "Upload failed");
       }
 
-      const initRes = await fetch('/api/upload-video', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          eventId,
-          filename: name,
-          contentType: guessedType,
-        }),
-        cache: 'no-store',
-      })
-
-      const initJson = await initRes.json().catch(() => ({} as any))
-      if (!initRes.ok) throw new Error(initJson?.error ?? 'Failed to start upload')
-
-      const { bucket, path, token: uploadToken, contentType } = initJson as {
-        bucket: string
-        path: string
-        token: string
-        contentType?: string
+      // This endpoint returns the updated submission row (video_path + published)
+      if (json?.submission) {
+        setSub(json.submission as SubmissionRow);
+      } else {
+        // fallback: at least update path if provided
+        if (json?.path) setSub((s) => (s ? { ...s, video_path: json.path } : s));
       }
 
-      const { error: upErr } = await sb.storage
-        .from(bucket)
-        .uploadToSignedUrl(path, uploadToken, file, {
-          upsert: true,
-          contentType: contentType || guessedType || 'video/mp4',
-          cacheControl: '3600',
-        })
-
-      if (upErr) throw new Error(upErr.message)
-
-      await save({ video_path: path, published: true })
-
-      setSaveMsg('Uploaded ✓')
-      setTimeout(() => setSaveMsg(null), 1500)
+      setSaveMsg("Video uploaded ✓");
+      setTimeout(() => setSaveMsg(null), 1500);
+      router.refresh();
     } catch (e: any) {
-      setSaveMsg(e?.message ?? 'Upload failed')
+      console.error("UPLOAD FAILED:", e);
+      setSaveMsg(e?.message ?? "Upload failed");
     } finally {
-      setBusy(false)
+      setBusy(false);
     }
-  }
+  };
 
   if (!ready) {
     return (
       <main className="min-h-[100dvh] w-full flex items-center justify-center p-4">
         <div className="aero-glass rounded-3xl p-6">Loading…</div>
       </main>
-    )
+    );
   }
 
   return (
-    // IMPORTANT: no nested scroll container; let body scroll.
-    <main className="min-h-[100dvh] w-full overflow-x-hidden p-4 pb-[calc(env(safe-area-inset-bottom)+16px)]">
+    <main
+      className="min-h-[100dvh] w-full overflow-x-hidden p-4 pb-[calc(env(safe-area-inset-bottom)+16px)]"
+      style={{
+        WebkitOverflowScrolling: "touch",
+        touchAction: "pan-y",
+      }}
+    >
       <div className="mx-auto w-full max-w-2xl">
         <div className="flex items-center justify-between gap-3">
           <div className="aero-glass rounded-3xl px-4 py-3">
@@ -345,7 +269,6 @@ export default function SubmitClient({
                 className="w-full rounded-2xl border border-white/60 bg-white/50 px-4 py-3 text-sm font-semibold tracking-widest outline-none"
               />
               <button
-                type="button"
                 disabled={busy || code.trim().length < 4}
                 onClick={redeem}
                 className="aero-btn rounded-2xl px-4 py-3 text-sm font-semibold"
@@ -356,32 +279,28 @@ export default function SubmitClient({
 
             {redeemError ? <p className="mt-3 text-sm text-red-800">{redeemError}</p> : null}
             {saveMsg ? <p className="mt-3 text-sm text-black/70">{saveMsg}</p> : null}
-
-            <div className="mt-6 text-xs text-black/60">
-              Privacy note: In this MVP likes are counted via IP-hash (no comments, no profiles).
-            </div>
           </div>
         ) : (
           <div className="mt-6 grid gap-4">
             <div className="aero-glass rounded-3xl p-6">
               <div className="text-lg font-semibold">Your submission</div>
-              <p className="mt-1 text-sm text-black/70">
-                Fill in the details, upload a video, done. When the event starts, your video becomes available in the
-                feed.
-              </p>
 
               <FormRow label="Artist / Act name">
                 <input
                   value={sub.display_name}
-                  onChange={(e) => setSub((s) => (s ? { ...s, display_name: e.target.value } : s))}
+                  onChange={(e) =>
+                    setSub((s) => (s ? { ...s, display_name: e.target.value } : s))
+                  }
                   className="w-full rounded-2xl border border-white/60 bg-white/50 px-4 py-3 text-sm outline-none"
                 />
               </FormRow>
 
               <FormRow label="Description">
                 <textarea
-                  value={sub.description ?? ''}
-                  onChange={(e) => setSub((s) => (s ? { ...s, description: e.target.value } : s))}
+                  value={sub.description ?? ""}
+                  onChange={(e) =>
+                    setSub((s) => (s ? { ...s, description: e.target.value } : s))
+                  }
                   rows={4}
                   className="w-full rounded-2xl border border-white/60 bg-white/50 px-4 py-3 text-sm outline-none"
                 />
@@ -390,22 +309,28 @@ export default function SubmitClient({
               <div className="grid gap-3 md:grid-cols-3">
                 <FormRow label="Spotify link">
                   <input
-                    value={sub.spotify_url ?? ''}
-                    onChange={(e) => setSub((s) => (s ? { ...s, spotify_url: e.target.value } : s))}
+                    value={sub.spotify_url ?? ""}
+                    onChange={(e) =>
+                      setSub((s) => (s ? { ...s, spotify_url: e.target.value } : s))
+                    }
                     className="w-full rounded-2xl border border-white/60 bg-white/50 px-4 py-3 text-sm outline-none"
                   />
                 </FormRow>
                 <FormRow label="SoundCloud link">
                   <input
-                    value={sub.soundcloud_url ?? ''}
-                    onChange={(e) => setSub((s) => (s ? { ...s, soundcloud_url: e.target.value } : s))}
+                    value={sub.soundcloud_url ?? ""}
+                    onChange={(e) =>
+                      setSub((s) => (s ? { ...s, soundcloud_url: e.target.value } : s))
+                    }
                     className="w-full rounded-2xl border border-white/60 bg-white/50 px-4 py-3 text-sm outline-none"
                   />
                 </FormRow>
                 <FormRow label="Instagram link">
                   <input
-                    value={sub.instagram_url ?? ''}
-                    onChange={(e) => setSub((s) => (s ? { ...s, instagram_url: e.target.value } : s))}
+                    value={sub.instagram_url ?? ""}
+                    onChange={(e) =>
+                      setSub((s) => (s ? { ...s, instagram_url: e.target.value } : s))
+                    }
                     className="w-full rounded-2xl border border-white/60 bg-white/50 px-4 py-3 text-sm outline-none"
                   />
                 </FormRow>
@@ -413,7 +338,6 @@ export default function SubmitClient({
 
               <div className="mt-4 flex flex-wrap items-center gap-2">
                 <button
-                  type="button"
                   disabled={busy}
                   onClick={() =>
                     save({
@@ -429,17 +353,16 @@ export default function SubmitClient({
                   Save
                 </button>
 
+                {/* Publish only makes sense if a video exists */}
                 <button
-                  type="button"
-                  disabled={busy}
+                  disabled={busy || !sub.video_path}
                   onClick={() => save({ published: true })}
-                  className="aero-btn rounded-2xl px-4 py-3 text-sm font-semibold"
+                  className="aero-btn rounded-2xl px-4 py-3 text-sm font-semibold disabled:opacity-50"
                 >
                   Publish
                 </button>
 
                 <button
-                  type="button"
                   disabled={busy}
                   onClick={() => save({ published: false })}
                   className="aero-btn rounded-2xl px-4 py-3 text-sm font-semibold"
@@ -451,42 +374,33 @@ export default function SubmitClient({
               </div>
 
               <div className="mt-6">
-                <div className="text-sm font-semibold">Video upload (mp4 / mov)</div>
+                <div className="text-sm font-semibold">Video upload (mp4 or mov)</div>
                 <p className="mt-1 text-xs text-black/60">
-                  Tip: 9:16, under 50 MB (free-tier friendly). Bucket is private; live feed uses signed URLs.
+                  Tip: 9:16 recommended. If iPhone produces .mov, it’s accepted.
                 </p>
 
                 <input
                   disabled={busy}
                   type="file"
-                  accept=".mp4,.mov,video/mp4,video/quicktime"
+                  accept="video/mp4,video/quicktime,video/*"
                   onChange={(e) => {
-                    const f = e.target.files?.[0]
-                    if (f) void uploadVideo(f)
+                    const f = e.target.files?.[0];
+                    if (f) void uploadVideo(f);
                   }}
                   className="mt-2 block w-full text-sm"
                 />
 
                 <div className="mt-2 text-xs text-black/60">
-                  Status: {sub.video_path ? 'Video uploaded' : 'No video yet'} ·{' '}
-                  {sub.published ? 'published' : 'not published'}
+                  Status: {sub.video_path ? "Video uploaded" : "No video yet"} ·{" "}
+                  {sub.published ? "published" : "not published"}
                 </div>
               </div>
-            </div>
-
-            <div className="aero-glass rounded-3xl p-6">
-              <div className="text-sm font-semibold">What happens next?</div>
-              <ul className="mt-2 text-sm text-black/70 list-disc pl-5 space-y-1">
-                <li>You are assigned to one slot (via code).</li>
-                <li>When the event starts, all published videos become available.</li>
-                <li>Likes are counted via IP-hash per video (1 like per IP).</li>
-              </ul>
             </div>
           </div>
         )}
       </div>
     </main>
-  )
+  );
 }
 
 function FormRow({ label, children }: { label: string; children: ReactNode }) {
@@ -495,5 +409,5 @@ function FormRow({ label, children }: { label: string; children: ReactNode }) {
       <div className="mb-1 text-xs font-semibold text-black/60">{label}</div>
       {children}
     </label>
-  )
+  );
 }
