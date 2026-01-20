@@ -30,7 +30,7 @@ export default function SubmitClient({
 
   const [file, setFile] = useState<File | null>(null);
 
-  // iOS scroll “stuck” protection
+  // iOS scroll “stuck” protection (undo overflow hidden from feed pages)
   useEffect(() => {
     const body = document.body;
     const html = document.documentElement;
@@ -82,6 +82,7 @@ export default function SubmitClient({
     };
   }, [sb]);
 
+  // ---- load submission deterministically (event + user) ----
   const loadSubmission = async (uid: string) => {
     const { data, error } = await sb
       .from("submissions")
@@ -148,14 +149,54 @@ export default function SubmitClient({
     }
   };
 
-  // ---- publish (single button): upload + save + publish ----
+  // ---- save draft (optional): saves text fields only (no video, not published) ----
+  const saveDraft = async () => {
+    if (!sub) {
+      setMsg("Redeem a code first.");
+      return;
+    }
+    setBusy(true);
+    setMsg(null);
+
+    try {
+      const { data, error } = await sb
+        .from("submissions")
+        .update({
+          display_name: sub.display_name || "Unnamed act",
+          description: sub.description ?? null,
+          spotify_url: sub.spotify_url ?? null,
+          soundcloud_url: sub.soundcloud_url ?? null,
+          instagram_url: sub.instagram_url ?? null,
+        })
+        .eq("id", sub.id)
+        .select(
+          "id,event_id,user_id,display_name,description,spotify_url,soundcloud_url,instagram_url,video_path,published"
+        )
+        .single();
+
+      if (error) throw error;
+
+      setSub(data as SubmissionRow);
+      setMsg("Saved ✓");
+      setTimeout(() => setMsg(null), 1500);
+      router.refresh();
+    } catch (e: any) {
+      console.error("SAVE DRAFT FAILED:", e);
+      setMsg(e?.message ?? "Save failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // ---- publish (single button): upload + save all fields + publish ----
+  // IMPORTANT: This calls /api/upload-video (NOT /api/publish)
   const publish = async () => {
     if (!sub) {
       setMsg("Redeem a code first.");
       return;
     }
     if (!file) {
-      setMsg("Please choose a video first (mp4 or mov).");
+      setMsg("Please choose a video first (.mp4 or .mov).");
       return;
     }
     if (!token || !userId) {
@@ -171,34 +212,32 @@ export default function SubmitClient({
       form.append("eventId", eventId);
       form.append("file", file);
 
-      // send current inputs too (from current state)
+      // Send current inputs (server will persist them + set published=true)
       form.append("display_name", sub.display_name || "");
       form.append("description", sub.description ?? "");
       form.append("spotify_url", sub.spotify_url ?? "");
       form.append("soundcloud_url", sub.soundcloud_url ?? "");
       form.append("instagram_url", sub.instagram_url ?? "");
 
-      const res = await fetch("/api/publish", {
+      const res = await fetch("/api/upload-video", {
         method: "POST",
         headers: { authorization: `Bearer ${token}` },
         body: form,
       });
 
       const json = await res.json().catch(() => ({} as any));
-
       if (!res.ok) {
-        console.error("PUBLISH API ERROR:", json);
-        const detail = json?.details ? ` (${typeof json.details === "string" ? json.details : "see console"})` : "";
-        throw new Error((json?.error ?? "Publish failed") + detail);
+        console.error("UPLOAD/PUBLISH API ERROR:", json);
+        throw new Error(json?.error ?? "Publish failed");
       }
 
       if (json?.submission) {
         setSub(json.submission as SubmissionRow);
       } else {
+        // Fallback: reload from DB
         await loadSubmission(userId);
       }
 
-      setFile(null);
       setMsg("Published ✓");
       setTimeout(() => setMsg(null), 1500);
       router.refresh();
@@ -210,7 +249,7 @@ export default function SubmitClient({
     }
   };
 
-  // ---- hide ----
+  // ---- hide (unpublish) ----
   const hide = async () => {
     if (!sub) return;
     setBusy(true);
@@ -337,7 +376,7 @@ export default function SubmitClient({
               </div>
 
               <div className="mt-6">
-                <div className="text-sm font-semibold">Video (mp4 or mov)</div>
+                <div className="text-sm font-semibold">Video (.mp4 or .mov)</div>
                 <input
                   disabled={busy}
                   type="file"
@@ -352,6 +391,14 @@ export default function SubmitClient({
               </div>
 
               <div className="mt-4 flex flex-wrap items-center gap-2">
+                <button
+                  disabled={busy}
+                  onClick={saveDraft}
+                  className="aero-btn rounded-2xl px-4 py-3 text-sm font-semibold"
+                >
+                  Save draft
+                </button>
+
                 <button
                   disabled={busy || !file}
                   onClick={publish}
