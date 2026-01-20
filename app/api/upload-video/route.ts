@@ -1,115 +1,83 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { promises as fs } from "fs";
+import path from "path";
+import os from "os";
+import { spawn } from "child_process";
 
-export const runtime = "nodejs"; // Netlify/Next: ensure Node runtime
+export const runtime = "nodejs";
 
-function getBearerToken(req: Request) {
-  const h = req.headers.get("authorization") || req.headers.get("Authorization");
-  if (!h) return null;
-  const m = h.match(/^Bearer\s+(.+)$/i);
-  return m ? m[1] : null;
+function run(cmd: string, args: string[]) {
+  return new Promise<void>((resolve, reject) => {
+    const p = spawn(cmd, args, { stdio: "inherit" });
+    p.on("error", reject);
+    p.on("close", (code) => (code === 0 ? resolve() : reject(new Error(`${cmd} exited ${code}`))));
+  });
 }
 
-function extFromName(name: string) {
-  const lower = name.toLowerCase();
-  if (lower.endsWith(".mp4")) return "mp4";
-  if (lower.endsWith(".mov")) return "mov";
-  return null;
-}
-
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
-    const token = getBearerToken(req);
-    if (!token) {
-      return NextResponse.json({ error: "Missing Authorization Bearer token" }, { status: 401 });
-    }
+    const auth = req.headers.get("authorization");
+    const token = auth?.startsWith("Bearer ") ? auth.slice(7) : null;
+    if (!token) return NextResponse.json({ error: "Missing bearer token" }, { status: 401 });
+
+    const sb = supabaseAdmin();
+    const { data: userData, error: userErr } = await sb.auth.getUser(token);
+    if (userErr || !userData.user) return NextResponse.json({ error: "Invalid session" }, { status: 401 });
+    const userId = userData.user.id;
 
     const form = await req.formData();
     const file = form.get("file");
     const eventId = String(form.get("eventId") || "");
+    if (!eventId) return NextResponse.json({ error: "Missing eventId" }, { status: 400 });
+    if (!(file instanceof File)) return NextResponse.json({ error: "Missing file" }, { status: 400 });
 
-    if (!eventId) {
-      return NextResponse.json({ error: "Missing eventId" }, { status: 400 });
-    }
-    if (!(file instanceof File)) {
-      return NextResponse.json({ error: "Missing file" }, { status: 400 });
-    }
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "aerostage-"));
+    const inPath = path.join(tmpDir, `in-${Date.now()}-${file.name}`);
+    const outPath = path.join(tmpDir, `out-${Date.now()}.mp4`);
 
-    const ext = extFromName(file.name) || (file.type === "video/mp4" ? "mp4" : file.type === "video/quicktime" ? "mov" : null);
-    if (!ext) {
-      return NextResponse.json(
-        { error: "Unsupported file type. Please upload .mp4 or .mov" },
-        { status: 400 }
-      );
-    }
+    const buf = Buffer.from(await file.arrayBuffer());
+    await fs.writeFile(inPath, buf);
 
-    // Validate size (optional but recommended for Netlify/serverless limits)
-    // e.g. 200 MB hard stop (adjust)
-    const MAX_MB = 200;
-    const sizeMb = file.size / (1024 * 1024);
-    if (sizeMb > MAX_MB) {
-      return NextResponse.json({ error: `File too large (${sizeMb.toFixed(1)}MB). Max ${MAX_MB}MB.` }, { status: 413 });
-    }
+    // Transcode -> MP4 H.264 + AAC + faststart
+    await run("ffmpeg", [
+      "-y",
+      "-i",
+      inPath,
+      "-c:v",
+      "libx264",
+      "-pix_fmt",
+      "yuv420p",
+      "-preset",
+      "veryfast",
+      "-crf",
+      "23",
+      "-c:a",
+      "aac",
+      "-b:a",
+      "128k",
+      "-movflags",
+      "+faststart",
+      outPath,
+    ]);
 
-    // IMPORTANT:
-    // Verify the user from the token to get userId (auth.uid equivalent)
-    const sb = supabaseAdmin();
-    const { data: userData, error: userErr } = await sb.auth.getUser(token);
-    if (userErr || !userData?.user?.id) {
-      return NextResponse.json({ error: "Invalid auth token" }, { status: 401 });
-    }
-    const userId = userData.user.id;
+    const outBuf = await fs.readFile(outPath);
 
-    // Ensure there is a submission row for this (eventId + userId)
-    // If your redeem flow already creates it, this is just a safety net.
-    const { data: subRow, error: subErr } = await sb
-      .from("submissions")
-      .select("id, video_path, published")
-      .eq("event_id", eventId)
-      .eq("user_id", userId)
-      .maybeSingle();
+    const stamp = Date.now();
+    const storagePath = `${userId}/${eventId}-${stamp}.mp4`;
 
-    if (subErr) {
-      return NextResponse.json({ error: "Failed to load submission", details: subErr }, { status: 500 });
-    }
-    if (!subRow?.id) {
-      return NextResponse.json(
-        { error: "No submission found for this user/event. Redeem a code first." },
-        { status: 400 }
-      );
-    }
+    const { error: upErr } = await sb.storage.from("videos").upload(storagePath, outBuf, {
+      contentType: "video/mp4",
+      upsert: true,
+      cacheControl: "3600",
+    });
+    if (upErr) throw upErr;
 
-    // Build a stable storage path
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "_");
-    const timestamp = Date.now();
-    const path = `${eventId}/${userId}/${timestamp}-${safeName}`;
+    // cleanup best-effort
+    fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
 
-    // Upload to Supabase Storage bucket "videos"
-    const bytes = new Uint8Array(await file.arrayBuffer());
-
-    const { error: upErr } = await sb.storage
-      .from("videos")
-      .upload(path, bytes, {
-        contentType: file.type || (ext === "mp4" ? "video/mp4" : "video/quicktime"),
-        upsert: true,
-      });
-
-    if (upErr) {
-      return NextResponse.json({ error: "Upload failed", details: upErr }, { status: 500 });
-    }
-
-    // Save video_path and publish immediately
-    const { error: updErr } = await sb
-      .from("submissions")
-      .update({ video_path: path, published: true })
-      .eq("id", subRow.id);
-
-    if (updErr) {
-      return NextResponse.json({ error: "Failed to update submission", details: updErr }, { status: 500 });
-    }
-
-    return NextResponse.json({ ok: true, path }, { status: 200 });
+    return NextResponse.json({ path: storagePath });
   } catch (e: any) {
-    return NextResponse.json({ error: "Server error", details: e?.message ?? String(e) }, { status: 500 });
+    return NextResponse.json({ error: e?.message ?? "Upload failed" }, { status: 500 });
   }
 }
