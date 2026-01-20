@@ -1,83 +1,128 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { promises as fs } from "fs";
-import path from "path";
-import os from "os";
-import { spawn } from "child_process";
 
 export const runtime = "nodejs";
 
-function run(cmd: string, args: string[]) {
-  return new Promise<void>((resolve, reject) => {
-    const p = spawn(cmd, args, { stdio: "inherit" });
-    p.on("error", reject);
-    p.on("close", (code) => (code === 0 ? resolve() : reject(new Error(`${cmd} exited ${code}`))));
-  });
+function getBearerToken(req: Request) {
+  const h = req.headers.get("authorization") || req.headers.get("Authorization");
+  if (!h) return null;
+  const m = h.match(/^Bearer\s+(.+)$/i);
+  return m ? m[1] : null;
 }
 
-export async function POST(req: NextRequest) {
-  try {
-    const auth = req.headers.get("authorization");
-    const token = auth?.startsWith("Bearer ") ? auth.slice(7) : null;
-    if (!token) return NextResponse.json({ error: "Missing bearer token" }, { status: 401 });
+function extFromName(name: string) {
+  const lower = name.toLowerCase();
+  if (lower.endsWith(".mp4")) return "mp4";
+  if (lower.endsWith(".mov")) return "mov";
+  return null;
+}
 
-    const sb = supabaseAdmin();
-    const { data: userData, error: userErr } = await sb.auth.getUser(token);
-    if (userErr || !userData.user) return NextResponse.json({ error: "Invalid session" }, { status: 401 });
-    const userId = userData.user.id;
+export async function POST(req: Request) {
+  try {
+    const token = getBearerToken(req);
+    if (!token) {
+      return NextResponse.json({ error: "Missing Authorization Bearer token" }, { status: 401 });
+    }
 
     const form = await req.formData();
-    const file = form.get("file");
+
     const eventId = String(form.get("eventId") || "");
+    const file = form.get("file");
+
+    const display_name = String(form.get("display_name") || "").trim();
+    const description = String(form.get("description") || "").trim();
+    const spotify_url = String(form.get("spotify_url") || "").trim();
+    const soundcloud_url = String(form.get("soundcloud_url") || "").trim();
+    const instagram_url = String(form.get("instagram_url") || "").trim();
+
     if (!eventId) return NextResponse.json({ error: "Missing eventId" }, { status: 400 });
     if (!(file instanceof File)) return NextResponse.json({ error: "Missing file" }, { status: 400 });
 
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "aerostage-"));
-    const inPath = path.join(tmpDir, `in-${Date.now()}-${file.name}`);
-    const outPath = path.join(tmpDir, `out-${Date.now()}.mp4`);
+    const ext =
+      extFromName(file.name) ||
+      (file.type === "video/mp4" ? "mp4" : file.type === "video/quicktime" ? "mov" : null);
 
-    const buf = Buffer.from(await file.arrayBuffer());
-    await fs.writeFile(inPath, buf);
+    if (!ext) {
+      return NextResponse.json({ error: "Unsupported file type. Upload .mp4 or .mov" }, { status: 400 });
+    }
 
-    // Transcode -> MP4 H.264 + AAC + faststart
-    await run("ffmpeg", [
-      "-y",
-      "-i",
-      inPath,
-      "-c:v",
-      "libx264",
-      "-pix_fmt",
-      "yuv420p",
-      "-preset",
-      "veryfast",
-      "-crf",
-      "23",
-      "-c:a",
-      "aac",
-      "-b:a",
-      "128k",
-      "-movflags",
-      "+faststart",
-      outPath,
-    ]);
+    // optional: limit size (adjust if needed)
+    const MAX_MB = 250;
+    const sizeMb = file.size / (1024 * 1024);
+    if (sizeMb > MAX_MB) {
+      return NextResponse.json(
+        { error: `File too large (${sizeMb.toFixed(1)}MB). Max ${MAX_MB}MB.` },
+        { status: 413 }
+      );
+    }
 
-    const outBuf = await fs.readFile(outPath);
+    const sb = supabaseAdmin();
 
-    const stamp = Date.now();
-    const storagePath = `${userId}/${eventId}-${stamp}.mp4`;
+    // Resolve user from Bearer token (works with anonymous auth too)
+    const { data: userData, error: userErr } = await sb.auth.getUser(token);
+    if (userErr || !userData?.user?.id) {
+      return NextResponse.json({ error: "Invalid auth token" }, { status: 401 });
+    }
+    const userId = userData.user.id;
 
-    const { error: upErr } = await sb.storage.from("videos").upload(storagePath, outBuf, {
-      contentType: "video/mp4",
+    // Ensure submission exists for this event+user (redeem must be done first)
+    const { data: submission, error: subErr } = await sb
+      .from("submissions")
+      .select("id")
+      .eq("event_id", eventId)
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (subErr) return NextResponse.json({ error: "Failed to load submission", details: subErr }, { status: 500 });
+    if (!submission?.id) {
+      return NextResponse.json({ error: "No submission found. Redeem a code first." }, { status: 400 });
+    }
+
+    // Upload to Storage bucket "videos"
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "_");
+    const ts = Date.now();
+    const path = `${eventId}/${userId}/${ts}-${safeName}`;
+
+    const bytes = new Uint8Array(await file.arrayBuffer());
+
+    const { error: uploadErr } = await sb.storage.from("videos").upload(path, bytes, {
+      contentType: file.type || (ext === "mp4" ? "video/mp4" : "video/quicktime"),
       upsert: true,
-      cacheControl: "3600",
     });
-    if (upErr) throw upErr;
 
-    // cleanup best-effort
-    fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    if (uploadErr) {
+      return NextResponse.json({ error: "Upload failed", details: uploadErr }, { status: 500 });
+    }
 
-    return NextResponse.json({ path: storagePath });
+    // Update DB row with ALL fields + publish
+    const patch: any = {
+      display_name: display_name || "Unnamed act",
+      description: description || null,
+      spotify_url: spotify_url || null,
+      soundcloud_url: soundcloud_url || null,
+      instagram_url: instagram_url || null,
+      video_path: path,
+      published: true,
+    };
+
+    const { data: updated, error: updErr } = await sb
+      .from("submissions")
+      .update(patch)
+      .eq("id", submission.id)
+      .select(
+        "id,event_id,user_id,display_name,description,spotify_url,soundcloud_url,instagram_url,video_path,published"
+      )
+      .single();
+
+    if (updErr) {
+      return NextResponse.json({ error: "Failed to update submission", details: updErr }, { status: 500 });
+    }
+
+    return NextResponse.json({ ok: true, submission: updated }, { status: 200 });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Upload failed" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Server error", details: e?.message ?? String(e) },
+      { status: 500 }
+    );
   }
 }

@@ -30,7 +30,7 @@ export default function SubmitClient({
 
   const [file, setFile] = useState<File | null>(null);
 
-  // iOS scroll “stuck” protection (undo overflow hidden from feed pages)
+  // iOS scroll “stuck” protection
   useEffect(() => {
     const body = document.body;
     const html = document.documentElement;
@@ -82,7 +82,6 @@ export default function SubmitClient({
     };
   }, [sb]);
 
-  // ---- load submission deterministically (event + user) ----
   const loadSubmission = async (uid: string) => {
     const { data, error } = await sb
       .from("submissions")
@@ -159,7 +158,7 @@ export default function SubmitClient({
       setMsg("Please choose a video first (mp4 or mov).");
       return;
     }
-    if (!token) {
+    if (!token || !userId) {
       setMsg("No login token found. Please reload the page.");
       return;
     }
@@ -172,7 +171,7 @@ export default function SubmitClient({
       form.append("eventId", eventId);
       form.append("file", file);
 
-      // send current inputs too
+      // send current inputs too (from current state)
       form.append("display_name", sub.display_name || "");
       form.append("description", sub.description ?? "");
       form.append("spotify_url", sub.spotify_url ?? "");
@@ -186,15 +185,20 @@ export default function SubmitClient({
       });
 
       const json = await res.json().catch(() => ({} as any));
+
       if (!res.ok) {
         console.error("PUBLISH API ERROR:", json);
-        throw new Error(json?.error ?? "Publish failed");
+        const detail = json?.details ? ` (${typeof json.details === "string" ? json.details : "see console"})` : "";
+        throw new Error((json?.error ?? "Publish failed") + detail);
       }
 
       if (json?.submission) {
         setSub(json.submission as SubmissionRow);
+      } else {
+        await loadSubmission(userId);
       }
 
+      setFile(null);
       setMsg("Published ✓");
       setTimeout(() => setMsg(null), 1500);
       router.refresh();
@@ -223,6 +227,7 @@ export default function SubmitClient({
         .single();
 
       if (error) throw error;
+
       setSub(data as SubmissionRow);
       setMsg("Hidden ✓");
       setTimeout(() => setMsg(null), 1500);
@@ -293,9 +298,7 @@ export default function SubmitClient({
               <FormRow label="Artist / Act name">
                 <input
                   value={sub.display_name}
-                  onChange={(e) =>
-                    setSub((s) => (s ? { ...s, display_name: e.target.value } : s))
-                  }
+                  onChange={(e) => setSub((s) => (s ? { ...s, display_name: e.target.value } : s))}
                   className="w-full rounded-2xl border border-white/60 bg-white/50 px-4 py-3 text-sm outline-none"
                 />
               </FormRow>
@@ -303,9 +306,7 @@ export default function SubmitClient({
               <FormRow label="Description">
                 <textarea
                   value={sub.description ?? ""}
-                  onChange={(e) =>
-                    setSub((s) => (s ? { ...s, description: e.target.value } : s))
-                  }
+                  onChange={(e) => setSub((s) => (s ? { ...s, description: e.target.value } : s))}
                   rows={4}
                   className="w-full rounded-2xl border border-white/60 bg-white/50 px-4 py-3 text-sm outline-none"
                 />
@@ -315,27 +316,21 @@ export default function SubmitClient({
                 <FormRow label="Spotify link">
                   <input
                     value={sub.spotify_url ?? ""}
-                    onChange={(e) =>
-                      setSub((s) => (s ? { ...s, spotify_url: e.target.value } : s))
-                    }
+                    onChange={(e) => setSub((s) => (s ? { ...s, spotify_url: e.target.value } : s))}
                     className="w-full rounded-2xl border border-white/60 bg-white/50 px-4 py-3 text-sm outline-none"
                   />
                 </FormRow>
                 <FormRow label="SoundCloud link">
                   <input
                     value={sub.soundcloud_url ?? ""}
-                    onChange={(e) =>
-                      setSub((s) => (s ? { ...s, soundcloud_url: e.target.value } : s))
-                    }
+                    onChange={(e) => setSub((s) => (s ? { ...s, soundcloud_url: e.target.value } : s))}
                     className="w-full rounded-2xl border border-white/60 bg-white/50 px-4 py-3 text-sm outline-none"
                   />
                 </FormRow>
                 <FormRow label="Instagram link">
                   <input
                     value={sub.instagram_url ?? ""}
-                    onChange={(e) =>
-                      setSub((s) => (s ? { ...s, instagram_url: e.target.value } : s))
-                    }
+                    onChange={(e) => setSub((s) => (s ? { ...s, instagram_url: e.target.value } : s))}
                     className="w-full rounded-2xl border border-white/60 bg-white/50 px-4 py-3 text-sm outline-none"
                   />
                 </FormRow>
@@ -351,8 +346,8 @@ export default function SubmitClient({
                   className="mt-2 block w-full text-sm"
                 />
                 <div className="mt-2 text-xs text-black/60">
-                  Selected: {file ? file.name : "none"} · Stored:{" "}
-                  {sub.video_path ? "yes" : "no"} · {sub.published ? "published" : "not published"}
+                  Selected: {file ? file.name : "none"} · Stored: {sub.video_path ? "yes" : "no"} ·{" "}
+                  {sub.published ? "published" : "not published"}
                 </div>
               </div>
 
