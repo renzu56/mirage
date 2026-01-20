@@ -29,14 +29,29 @@ function initLikeState(videos: FeedVideo[]): LikeState {
   return s;
 }
 
+// Static Frutiger-Aero-ish blue background (no animation).
+// Kept as inline style so it’s guaranteed to be static and not depend on Tailwind config.
+const AERO_BG: React.CSSProperties = {
+  backgroundImage:
+    "radial-gradient(1200px 800px at 20% 15%, rgba(255,255,255,0.55), rgba(255,255,255,0) 55%)," +
+    "radial-gradient(900px 700px at 80% 25%, rgba(173,216,255,0.55), rgba(173,216,255,0) 60%)," +
+    "radial-gradient(1000px 900px at 50% 90%, rgba(0,140,255,0.35), rgba(0,140,255,0) 65%)," +
+    "linear-gradient(180deg, #bfe6ff 0%, #5bb7ff 45%, #1176d6 100%)",
+  backgroundAttachment: "fixed",
+};
+
 function IntroSlide() {
   return (
-    <div className="relative h-full w-full bg-black flex items-center justify-center">
+    <div className="relative h-full w-full flex items-center justify-center">
       <div className="px-6 text-center">
-        <div className="text-white text-xl font-semibold">Scroll to view videos</div>
-        <div className="mt-2 text-white/70 text-sm">Swipe / scroll up to start watching.</div>
+        <div className="text-white text-xl font-semibold drop-shadow">
+          Scroll to view videos
+        </div>
+        <div className="mt-2 text-white/80 text-sm drop-shadow">
+          Swipe / scroll up to start watching.
+        </div>
         <div className="mt-6 flex items-center justify-center">
-          <div className="h-10 w-10 rounded-full border-2 border-white/35 border-t-transparent animate-spin" />
+          <div className="h-10 w-10 rounded-full border-2 border-white/50 border-t-transparent animate-spin" />
         </div>
       </div>
     </div>
@@ -126,7 +141,10 @@ export function VideoFeedClient({ eventId, videos }: Props) {
 
   if (!videos.length) {
     return (
-      <div className="w-full h-[100dvh] flex items-center justify-center text-sm opacity-70 bg-black text-white">
+      <div
+        className="w-full h-[100dvh] flex items-center justify-center text-sm text-white/90"
+        style={AERO_BG}
+      >
         No videos
       </div>
     );
@@ -139,6 +157,7 @@ export function VideoFeedClient({ eventId, videos }: Props) {
       ref={containerRef}
       className="relative h-[100dvh] w-full overflow-y-auto snap-y snap-mandatory"
       style={{
+        ...AERO_BG,
         overscrollBehavior: "contain",
         WebkitOverflowScrolling: "touch",
         scrollbarWidth: "none",
@@ -191,7 +210,7 @@ export function VideoFeedClient({ eventId, videos }: Props) {
       })}
 
       {/* Indicator */}
-      <div className="absolute right-4 top-4 px-2 py-1 rounded-lg bg-black/40 text-white/80 text-xs">
+      <div className="absolute right-4 top-4 px-2 py-1 rounded-lg bg-black/35 text-white/90 text-xs backdrop-blur-sm">
         {currentIndex + 1}/{totalSlides}
       </div>
 
