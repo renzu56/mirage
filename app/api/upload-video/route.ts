@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-export const runtime = "nodejs"; // important for File/Buffer handling on Netlify
+export const runtime = "nodejs";
 
 function getAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -11,29 +11,29 @@ function getAdmin() {
     process.env.SUPABASE_KEY;
 
   if (!url) throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL");
-  if (!serviceKey)
-    throw new Error(
-      "Missing SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SECRET_KEY / SUPABASE_KEY)"
-    );
+  if (!serviceKey) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
 
   return createClient(url, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }
 
+function normalizeText(v: FormDataEntryValue | null) {
+  if (typeof v !== "string") return null;
+  const t = v.trim();
+  return t.length ? t : null;
+}
+
 function pickExt(file: File) {
-  // iOS sometimes sends video/quicktime for .mov
   const t = (file.type || "").toLowerCase();
   if (t.includes("quicktime")) return "mov";
   if (t.includes("mp4")) return "mp4";
 
-  // fallback: sniff name if present
   const anyFile = file as any;
   const name = String(anyFile?.name || "").toLowerCase();
   if (name.endsWith(".mov")) return "mov";
   if (name.endsWith(".mp4")) return "mp4";
 
-  // default
   return "mp4";
 }
 
@@ -53,7 +53,7 @@ export async function POST(req: Request) {
 
     const sb = getAdmin();
 
-    // Validate Supabase user from token
+    // Validate the user from the token
     const { data: userRes, error: userErr } = await sb.auth.getUser(token);
     if (userErr || !userRes?.user?.id) {
       return NextResponse.json(
@@ -63,10 +63,10 @@ export async function POST(req: Request) {
     }
     const userId = userRes.user.id;
 
-    // Parse multipart form
     const form = await req.formData();
-    const file = form.get("file");
+
     const eventId = String(form.get("eventId") || "").trim();
+    const file = form.get("file");
 
     if (!eventId) {
       return NextResponse.json({ error: "Missing eventId" }, { status: 400 });
@@ -75,29 +75,20 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing file" }, { status: 400 });
     }
 
-    // Accept mp4 + mov (+ other video types if you want)
+    // Fields to persist
+    const display_name = normalizeText(form.get("display_name"));
+    const description = normalizeText(form.get("description"));
+    const spotify_url = normalizeText(form.get("spotify_url"));
+    const soundcloud_url = normalizeText(form.get("soundcloud_url"));
+    const instagram_url = normalizeText(form.get("instagram_url"));
+
+    // Upload file -> Storage
     const ext = pickExt(file);
-    const mime = (file.type || "").toLowerCase();
-    const isOk =
-      ext === "mp4" ||
-      ext === "mov" ||
-      mime.startsWith("video/") ||
-      mime === "";
-
-    if (!isOk) {
-      return NextResponse.json(
-        { error: `Unsupported file type: ${file.type || "unknown"}` },
-        { status: 400 }
-      );
-    }
-
     const bytes = Buffer.from(await file.arrayBuffer());
 
-    // Storage path
     const filename = `${Date.now()}-${crypto.randomUUID()}.${ext}`;
     const path = `${eventId}/${userId}/${filename}`;
 
-    // Upload to Supabase Storage (bucket: videos)
     const { error: upErr } = await sb.storage.from("videos").upload(path, bytes, {
       contentType: file.type || (ext === "mov" ? "video/quicktime" : "video/mp4"),
       upsert: true,
@@ -111,13 +102,17 @@ export async function POST(req: Request) {
       );
     }
 
-    // IMPORTANT: update the submission row server-side (so video_path ALWAYS saves)
-    // Requires that user already redeemed a code (row exists).
+    // Update submission row server-side (guaranteed write)
     const { data: updated, error: updErr } = await sb
       .from("submissions")
       .update({
+        display_name: display_name ?? "Unnamed act",
+        description,
+        spotify_url,
+        soundcloud_url,
+        instagram_url,
         video_path: path,
-        published: true, // auto-publish on upload (change to false if you prefer manual publish)
+        published: true,
       })
       .eq("event_id", eventId)
       .eq("user_id", userId)
@@ -128,7 +123,7 @@ export async function POST(req: Request) {
 
     if (updErr) {
       return NextResponse.json(
-        { error: "DB update failed", details: updErr.message },
+        { error: "DB update failed", details: updErr.message, path },
         { status: 500 }
       );
     }
@@ -137,7 +132,7 @@ export async function POST(req: Request) {
       return NextResponse.json(
         {
           error:
-            "No submission row found. Redeem a code first (so submissions row exists).",
+            "No submission row found for this user/event. Redeem a code first so the submission row exists.",
           path,
         },
         { status: 409 }
@@ -146,9 +141,9 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true, path, submission: updated });
   } catch (e: any) {
-    console.error("UPLOAD ERROR:", e);
+    console.error("PUBLISH ERROR:", e);
     return NextResponse.json(
-      { error: "Upload crashed", details: e?.message ?? String(e) },
+      { error: "Publish crashed", details: e?.message ?? String(e) },
       { status: 500 }
     );
   }

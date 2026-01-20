@@ -26,9 +26,11 @@ export default function SubmitClient({
   const [busy, setBusy] = useState(false);
 
   const [sub, setSub] = useState<SubmissionRow | null>(null);
-  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
 
-  // iOS scroll “stuck” protection: undo any overflow:hidden/touchAction:none from feed pages
+  const [file, setFile] = useState<File | null>(null);
+
+  // iOS scroll “stuck” protection (undo overflow hidden from feed pages)
   useEffect(() => {
     const body = document.body;
     const html = document.documentElement;
@@ -107,7 +109,7 @@ export default function SubmitClient({
   // ---- redeem ----
   const redeem = async () => {
     setRedeemError(null);
-    setSaveMsg(null);
+    setMsg(null);
 
     const trimmed = code.trim().toUpperCase();
     if (trimmed.length < 4) {
@@ -137,8 +139,8 @@ export default function SubmitClient({
       await loadSubmission(userId);
       router.refresh();
 
-      setSaveMsg("Code redeemed ✓");
-      setTimeout(() => setSaveMsg(null), 1500);
+      setMsg("Code redeemed ✓");
+      setTimeout(() => setMsg(null), 1500);
     } catch (e: any) {
       console.error("REDEEM FAILED:", e);
       setRedeemError(e?.message ?? "Invalid code");
@@ -147,56 +149,37 @@ export default function SubmitClient({
     }
   };
 
-  // ---- save text fields ----
-  const save = async (patch: Partial<SubmissionRow>) => {
-    if (!sub) return;
-    setBusy(true);
-    setSaveMsg(null);
-
-    try {
-      const { data, error } = await sb
-        .from("submissions")
-        .update(patch)
-        .eq("id", sub.id)
-        .select(
-          "id,event_id,user_id,display_name,description,spotify_url,soundcloud_url,instagram_url,video_path,published"
-        )
-        .single();
-
-      if (error) {
-        console.error("SAVE ERROR:", error);
-        throw error;
-      }
-
-      setSub(data as SubmissionRow);
-      setSaveMsg("Saved ✓");
-      setTimeout(() => setSaveMsg(null), 1500);
-      router.refresh();
-    } catch (e: any) {
-      console.error("SAVE FAILED:", e);
-      setSaveMsg(e?.message ?? "Error while saving");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  // ---- upload video (mp4 + mov) ----
-  const uploadVideo = async (file: File) => {
+  // ---- publish (single button): upload + save + publish ----
+  const publish = async () => {
     if (!sub) {
-      setSaveMsg("Redeem a code first.");
+      setMsg("Redeem a code first.");
       return;
     }
+    if (!file) {
+      setMsg("Please choose a video first (mp4 or mov).");
+      return;
+    }
+    if (!token) {
+      setMsg("No login token found. Please reload the page.");
+      return;
+    }
+
     setBusy(true);
-    setSaveMsg(null);
+    setMsg(null);
 
     try {
-      if (!token) throw new Error("No login token found. Please reload the page.");
-
       const form = new FormData();
-      form.append("file", file);
       form.append("eventId", eventId);
+      form.append("file", file);
 
-      const res = await fetch("/api/upload-video", {
+      // send current inputs too
+      form.append("display_name", sub.display_name || "");
+      form.append("description", sub.description ?? "");
+      form.append("spotify_url", sub.spotify_url ?? "");
+      form.append("soundcloud_url", sub.soundcloud_url ?? "");
+      form.append("instagram_url", sub.instagram_url ?? "");
+
+      const res = await fetch("/api/publish", {
         method: "POST",
         headers: { authorization: `Bearer ${token}` },
         body: form,
@@ -204,24 +187,49 @@ export default function SubmitClient({
 
       const json = await res.json().catch(() => ({} as any));
       if (!res.ok) {
-        console.error("UPLOAD API ERROR:", json);
-        throw new Error(json?.error ?? "Upload failed");
+        console.error("PUBLISH API ERROR:", json);
+        throw new Error(json?.error ?? "Publish failed");
       }
 
-      // This endpoint returns the updated submission row (video_path + published)
       if (json?.submission) {
         setSub(json.submission as SubmissionRow);
-      } else {
-        // fallback: at least update path if provided
-        if (json?.path) setSub((s) => (s ? { ...s, video_path: json.path } : s));
       }
 
-      setSaveMsg("Video uploaded ✓");
-      setTimeout(() => setSaveMsg(null), 1500);
+      setMsg("Published ✓");
+      setTimeout(() => setMsg(null), 1500);
       router.refresh();
     } catch (e: any) {
-      console.error("UPLOAD FAILED:", e);
-      setSaveMsg(e?.message ?? "Upload failed");
+      console.error("PUBLISH FAILED:", e);
+      setMsg(e?.message ?? "Publish failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // ---- hide ----
+  const hide = async () => {
+    if (!sub) return;
+    setBusy(true);
+    setMsg(null);
+
+    try {
+      const { data, error } = await sb
+        .from("submissions")
+        .update({ published: false })
+        .eq("id", sub.id)
+        .select(
+          "id,event_id,user_id,display_name,description,spotify_url,soundcloud_url,instagram_url,video_path,published"
+        )
+        .single();
+
+      if (error) throw error;
+      setSub(data as SubmissionRow);
+      setMsg("Hidden ✓");
+      setTimeout(() => setMsg(null), 1500);
+      router.refresh();
+    } catch (e: any) {
+      console.error("HIDE FAILED:", e);
+      setMsg(e?.message ?? "Hide failed");
     } finally {
       setBusy(false);
     }
@@ -238,10 +246,7 @@ export default function SubmitClient({
   return (
     <main
       className="min-h-[100dvh] w-full overflow-x-hidden p-4 pb-[calc(env(safe-area-inset-bottom)+16px)]"
-      style={{
-        WebkitOverflowScrolling: "touch",
-        touchAction: "pan-y",
-      }}
+      style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}
     >
       <div className="mx-auto w-full max-w-2xl">
         <div className="flex items-center justify-between gap-3">
@@ -278,7 +283,7 @@ export default function SubmitClient({
             </div>
 
             {redeemError ? <p className="mt-3 text-sm text-red-800">{redeemError}</p> : null}
-            {saveMsg ? <p className="mt-3 text-sm text-black/70">{saveMsg}</p> : null}
+            {msg ? <p className="mt-3 text-sm text-black/70">{msg}</p> : null}
           </div>
         ) : (
           <div className="mt-6 grid gap-4">
@@ -336,27 +341,25 @@ export default function SubmitClient({
                 </FormRow>
               </div>
 
+              <div className="mt-6">
+                <div className="text-sm font-semibold">Video (mp4 or mov)</div>
+                <input
+                  disabled={busy}
+                  type="file"
+                  accept="video/mp4,video/quicktime,video/*"
+                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                  className="mt-2 block w-full text-sm"
+                />
+                <div className="mt-2 text-xs text-black/60">
+                  Selected: {file ? file.name : "none"} · Stored:{" "}
+                  {sub.video_path ? "yes" : "no"} · {sub.published ? "published" : "not published"}
+                </div>
+              </div>
+
               <div className="mt-4 flex flex-wrap items-center gap-2">
                 <button
-                  disabled={busy}
-                  onClick={() =>
-                    save({
-                      display_name: sub.display_name,
-                      description: sub.description,
-                      spotify_url: sub.spotify_url,
-                      soundcloud_url: sub.soundcloud_url,
-                      instagram_url: sub.instagram_url,
-                    })
-                  }
-                  className="aero-btn rounded-2xl px-4 py-3 text-sm font-semibold"
-                >
-                  Save
-                </button>
-
-                {/* Publish only makes sense if a video exists */}
-                <button
-                  disabled={busy || !sub.video_path}
-                  onClick={() => save({ published: true })}
+                  disabled={busy || !file}
+                  onClick={publish}
                   className="aero-btn rounded-2xl px-4 py-3 text-sm font-semibold disabled:opacity-50"
                 >
                   Publish
@@ -364,36 +367,13 @@ export default function SubmitClient({
 
                 <button
                   disabled={busy}
-                  onClick={() => save({ published: false })}
+                  onClick={hide}
                   className="aero-btn rounded-2xl px-4 py-3 text-sm font-semibold"
                 >
                   Hide
                 </button>
 
-                {saveMsg ? <span className="text-sm text-black/70">{saveMsg}</span> : null}
-              </div>
-
-              <div className="mt-6">
-                <div className="text-sm font-semibold">Video upload (mp4 or mov)</div>
-                <p className="mt-1 text-xs text-black/60">
-                  Tip: 9:16 recommended. If iPhone produces .mov, it’s accepted.
-                </p>
-
-                <input
-                  disabled={busy}
-                  type="file"
-                  accept="video/mp4,video/quicktime,video/*"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) void uploadVideo(f);
-                  }}
-                  className="mt-2 block w-full text-sm"
-                />
-
-                <div className="mt-2 text-xs text-black/60">
-                  Status: {sub.video_path ? "Video uploaded" : "No video yet"} ·{" "}
-                  {sub.published ? "published" : "not published"}
-                </div>
+                {msg ? <span className="text-sm text-black/70">{msg}</span> : null}
               </div>
             </div>
           </div>
