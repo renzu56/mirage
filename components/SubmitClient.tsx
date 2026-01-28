@@ -149,48 +149,24 @@ export default function SubmitClient({
     }
   };
 
-  // ---- save draft (optional): saves text fields only (no video, not published) ----
-  const saveDraft = async () => {
-    if (!sub) {
-      setMsg("Redeem a code first.");
-      return;
+  // ---- better API error extraction ----
+  const readApiError = async (res: Response) => {
+    const ct = res.headers.get("content-type") || "";
+    const text = await res.text();
+
+    if (ct.includes("application/json")) {
+      try {
+        const j = JSON.parse(text);
+        return j?.error || j?.message || text;
+      } catch {
+        return text || res.statusText;
+      }
     }
-    setBusy(true);
-    setMsg(null);
-
-    try {
-      const { data, error } = await sb
-        .from("submissions")
-        .update({
-          display_name: sub.display_name || "Unnamed act",
-          description: sub.description ?? null,
-          spotify_url: sub.spotify_url ?? null,
-          soundcloud_url: sub.soundcloud_url ?? null,
-          instagram_url: sub.instagram_url ?? null,
-        })
-        .eq("id", sub.id)
-        .select(
-          "id,event_id,user_id,display_name,description,spotify_url,soundcloud_url,instagram_url,video_path,published"
-        )
-        .single();
-
-      if (error) throw error;
-
-      setSub(data as SubmissionRow);
-      setMsg("Saved ✓");
-      setTimeout(() => setMsg(null), 1500);
-      router.refresh();
-    } catch (e: any) {
-      console.error("SAVE DRAFT FAILED:", e);
-      setMsg(e?.message ?? "Save failed");
-    } finally {
-      setBusy(false);
-    }
+    return text || res.statusText;
   };
 
-  // ---- publish (single button): upload + save all fields + publish ----
-  // IMPORTANT: This calls /api/upload-video (NOT /api/publish)
-  const publish = async () => {
+  // ---- single action: POST (upload + save fields + publish) ----
+  const post = async () => {
     if (!sub) {
       setMsg("Redeem a code first.");
       return;
@@ -203,6 +179,7 @@ export default function SubmitClient({
       setMsg("No login token found. Please reload the page.");
       return;
     }
+    if (busy) return;
 
     setBusy(true);
     setMsg(null);
@@ -212,7 +189,6 @@ export default function SubmitClient({
       form.append("eventId", eventId);
       form.append("file", file);
 
-      // Send current inputs (server will persist them + set published=true)
       form.append("display_name", sub.display_name || "");
       form.append("description", sub.description ?? "");
       form.append("spotify_url", sub.spotify_url ?? "");
@@ -223,57 +199,28 @@ export default function SubmitClient({
         method: "POST",
         headers: { authorization: `Bearer ${token}` },
         body: form,
+        cache: "no-store",
       });
 
-      const json = await res.json().catch(() => ({} as any));
       if (!res.ok) {
-        console.error("UPLOAD/PUBLISH API ERROR:", json);
-        throw new Error(json?.error ?? "Publish failed");
+        const errMsg = await readApiError(res);
+        console.error("UPLOAD/POST FAILED:", res.status, errMsg);
+        throw new Error(errMsg || "Post failed");
       }
 
+      const json = await res.json().catch(() => ({} as any));
       if (json?.submission) {
         setSub(json.submission as SubmissionRow);
       } else {
-        // Fallback: reload from DB
         await loadSubmission(userId);
       }
 
-      setMsg("Published ✓");
+      setMsg("Posted ✓");
       setTimeout(() => setMsg(null), 1500);
       router.refresh();
     } catch (e: any) {
-      console.error("PUBLISH FAILED:", e);
-      setMsg(e?.message ?? "Publish failed");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  // ---- hide (unpublish) ----
-  const hide = async () => {
-    if (!sub) return;
-    setBusy(true);
-    setMsg(null);
-
-    try {
-      const { data, error } = await sb
-        .from("submissions")
-        .update({ published: false })
-        .eq("id", sub.id)
-        .select(
-          "id,event_id,user_id,display_name,description,spotify_url,soundcloud_url,instagram_url,video_path,published"
-        )
-        .single();
-
-      if (error) throw error;
-
-      setSub(data as SubmissionRow);
-      setMsg("Hidden ✓");
-      setTimeout(() => setMsg(null), 1500);
-      router.refresh();
-    } catch (e: any) {
-      console.error("HIDE FAILED:", e);
-      setMsg(e?.message ?? "Hide failed");
+      console.error("POST FAILED:", e);
+      setMsg(e?.message ?? "Post failed");
     } finally {
       setBusy(false);
     }
@@ -380,7 +327,7 @@ export default function SubmitClient({
                 <input
                   disabled={busy}
                   type="file"
-                  accept="video/mp4,video/quicktime,video/*"
+                  accept="video/mp4,video/quicktime"
                   onChange={(e) => setFile(e.target.files?.[0] ?? null)}
                   className="mt-2 block w-full text-sm"
                 />
@@ -390,29 +337,14 @@ export default function SubmitClient({
                 </div>
               </div>
 
+              {/* Single button only */}
               <div className="mt-4 flex flex-wrap items-center gap-2">
                 <button
-                  disabled={busy}
-                  onClick={saveDraft}
-                  className="aero-btn rounded-2xl px-4 py-3 text-sm font-semibold"
-                >
-                  Save draft
-                </button>
-
-                <button
                   disabled={busy || !file}
-                  onClick={publish}
+                  onClick={post}
                   className="aero-btn rounded-2xl px-4 py-3 text-sm font-semibold disabled:opacity-50"
                 >
-                  Publish
-                </button>
-
-                <button
-                  disabled={busy}
-                  onClick={hide}
-                  className="aero-btn rounded-2xl px-4 py-3 text-sm font-semibold"
-                >
-                  Hide
+                  {busy ? "Posting…" : "Post"}
                 </button>
 
                 {msg ? <span className="text-sm text-black/70">{msg}</span> : null}
