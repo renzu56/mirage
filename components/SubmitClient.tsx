@@ -254,7 +254,7 @@ export default function SubmitClient({
           <div className="mt-6 aero-glass rounded-3xl p-6">
             <div className="text-lg font-semibold">Enter your one-time code</div>
             <p className="mt-2 text-sm text-black/70">
-              You will receive a code that corresponds to exactly one slot (~300 total) for this event.
+              You will receive a code that corresponds to exactly one slot for this event.
             </p>
 
             <div className="mt-4 flex gap-2">
@@ -323,7 +323,7 @@ export default function SubmitClient({
               </div>
 
               <div className="mt-6">
-                <div className="text-sm font-semibold">Video (.mp4 or .mov)</div>
+                <div className="text-sm font-semibold">Video</div>
                 <input
                   disabled={busy}
                   type="file"

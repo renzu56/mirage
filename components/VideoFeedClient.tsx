@@ -48,7 +48,7 @@ function IntroSlide() {
           Scroll to view videos
         </div>
         <div className="mt-2 text-white/80 text-sm drop-shadow">
-          Swipe / scroll up to start watching.
+          Swipe to start watching.
         </div>
         <div className="mt-6 flex items-center justify-center">
           <div className="h-10 w-10 rounded-full border-2 border-white/50 border-t-transparent animate-spin" />

@@ -4,7 +4,7 @@ import type { ReactNode } from 'react'
 
 export const metadata: Metadata = {
   title: 'Mirage',
-  description: 'Weekly swipe-only music-video events for musicians.',
+  description: 'Swipe-only music-video events for musicians.',
   themeColor: '#7cc7ff',
 }
 

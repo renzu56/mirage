@@ -37,7 +37,7 @@ export default async function HomePage() {
             </div>
           ) : (
             <p className="mt-6 text-sm md:text-base text-black/70">
-              No event scheduled. Set up an event in Supabase (starts_at / ends_at) and generate 300 codes.
+              No event scheduled. 
             </p>
           )}
           {/* Call-to-action buttons */}

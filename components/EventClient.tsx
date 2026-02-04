@@ -120,8 +120,8 @@ export default function EventClient({
     return (
       <main className="flex h-[100svh] items-center justify-center p-6">
         <div className="aero-glass rounded-3xl p-6 max-w-md text-center">
-          <div className="text-lg font-semibold">Noch keine Videos</div>
-          <p className="mt-2 text-sm text-black/70">Warte bis Musiker ihre Submissions veröffentlichen.</p>
+          <div className="text-lg font-semibold">No Videos</div>
+          <p className="mt-2 text-sm text-black/70">Wait until Content gets posted</p>
           <div className="mt-4">
             <Link className="aero-btn rounded-2xl px-4 py-3 text-sm font-semibold" href="/">
               Zurück
@@ -207,7 +207,7 @@ export default function EventClient({
             <button className="aero-btn rounded-2xl px-4 py-3 text-sm font-semibold" onClick={() => go(-1)}>
               ◀ zurück
             </button>
-            <div className="text-xs text-black/60">Swipe / Pfeile / Mausrad</div>
+            <div className="text-xs text-black/60">Swipe</div>
             <button className="aero-btn rounded-2xl px-4 py-3 text-sm font-semibold" onClick={() => go(1)}>
               weiter ▶
             </button>
@@ -217,7 +217,7 @@ export default function EventClient({
 
       {muted ? (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="aero-chip rounded-full px-4 py-2 text-sm text-black/70">Tippen für Sound</div>
+
         </div>
       ) : null}
     </main>
