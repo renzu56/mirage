@@ -13,7 +13,7 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 // Configure via env if you want:
 // - SUPABASE_VIDEO_BUCKET=submission-videos
 // - MAX_VIDEO_MB=200
-const VIDEO_BUCKET = process.env.SUPABASE_VIDEO_BUCKET || "submission-videos";
+const VIDEO_BUCKET = process.env.SUPABASE_VIDEO_BUCKET || "videos";
 const MAX_VIDEO_MB = Number(process.env.MAX_VIDEO_MB || "200");
 
 function jsonError(message: string, status = 500) {
