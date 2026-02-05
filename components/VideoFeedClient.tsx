@@ -29,15 +29,14 @@ function initLikeState(videos: FeedVideo[]): LikeState {
   return s;
 }
 
-// Static Frutiger-Aero-ish blue background (no animation).
-// Kept as inline style so it’s guaranteed to be static and not depend on Tailwind config.
+// Static sky-aero background layer (NO background-attachment: fixed -> prevents flicker on mobile)
 const AERO_BG: React.CSSProperties = {
   backgroundImage:
-    "radial-gradient(1200px 800px at 20% 15%, rgba(255,255,255,0.55), rgba(255,255,255,0) 55%)," +
-    "radial-gradient(900px 700px at 80% 25%, rgba(173,216,255,0.55), rgba(173,216,255,0) 60%)," +
-    "radial-gradient(1000px 900px at 50% 90%, rgba(0,140,255,0.35), rgba(0,140,255,0) 65%)," +
-    "linear-gradient(180deg, #bfe6ff 0%, #5bb7ff 45%, #1176d6 100%)",
-  backgroundAttachment: "fixed",
+    "radial-gradient(1100px 800px at 18% 12%, rgba(255,255,255,0.18), rgba(255,255,255,0) 62%)," +
+    "radial-gradient(950px 720px at 82% 20%, rgba(125,211,252,0.30), rgba(125,211,252,0) 62%)," +
+    "radial-gradient(1200px 900px at 50% 92%, rgba(37,99,235,0.18), rgba(37,99,235,0) 66%)," +
+    "linear-gradient(180deg, #a8dcff 0%, #79c6ff 48%, #4aa3ee 100%)",
+  backgroundColor: "#7fc6ff",
 };
 
 function IntroSlide() {
@@ -47,9 +46,7 @@ function IntroSlide() {
         <div className="text-white text-xl font-semibold drop-shadow">
           Scroll to view videos
         </div>
-        <div className="mt-2 text-white/80 text-sm drop-shadow">
-          Swipe to start watching.
-        </div>
+        <div className="mt-2 text-white/80 text-sm drop-shadow">Swipe to start watching.</div>
         <div className="mt-6 flex items-center justify-center">
           <div className="h-10 w-10 rounded-full border-2 border-white/50 border-t-transparent animate-spin" />
         </div>
@@ -139,13 +136,14 @@ export function VideoFeedClient({ eventId, videos }: Props) {
     [eventId]
   );
 
+  // Consistent background even when empty
   if (!videos.length) {
     return (
-      <div
-        className="w-full h-[100dvh] flex items-center justify-center text-sm text-white/90"
-        style={AERO_BG}
-      >
-        No videos
+      <div className="relative h-[100svh] w-full overflow-hidden">
+        <div className="pointer-events-none absolute inset-0" style={AERO_BG} />
+        <div className="relative w-full h-full flex items-center justify-center text-sm text-white/90">
+          No videos
+        </div>
       </div>
     );
   }
@@ -153,73 +151,84 @@ export function VideoFeedClient({ eventId, videos }: Props) {
   const totalSlides = videos.length + 1;
 
   return (
-    <div
-      ref={containerRef}
-      className="relative h-[100dvh] w-full overflow-y-auto snap-y snap-mandatory"
-      style={{
-        ...AERO_BG,
-        overscrollBehavior: "contain",
-        WebkitOverflowScrolling: "touch",
-        scrollbarWidth: "none",
-      }}
-    >
-      {/* Intro */}
-      <div data-index={0} className="h-[100dvh] w-full snap-start flex items-center justify-center">
-        <div className="h-[78svh] w-full flex items-center justify-center">
-          <VideoFrame>
-            <IntroSlide />
-          </VideoFrame>
-        </div>
-      </div>
+    <div className="relative h-[100svh] w-full overflow-hidden">
+      {/* Background layer (does NOT scroll -> smooth, no flicker) */}
+      <div className="pointer-events-none absolute inset-0" style={AERO_BG} />
 
-      {/* Videos */}
-      {videos.map((video, idx) => {
-        const slideIndex = idx + 1;
-        const likeState = likes[video.id] ?? { count: Number(video.likeCount ?? 0), liked: false };
-        const isActive = currentIndex === slideIndex;
-
-        const preloadType: "auto" | "metadata" =
-          Math.abs(currentIndex - slideIndex) <= 1 ? "auto" : "metadata";
-
-        return (
-          <div
-            key={video.id}
-            data-index={slideIndex}
-            className="h-[100dvh] w-full snap-start flex items-center justify-center"
-          >
-            <div className="h-[78svh] w-full flex items-center justify-center">
-              <VideoFrame>
-                <VideoCardSound
-                  active={isActive}
-                  preload={preloadType}
-                  src={video.src}
-                  poster={video.poster}
-                  title={video.title}
-                  description={video.description}
-                  spotifyUrl={video.spotifyUrl}
-                  soundcloudUrl={video.soundcloudUrl}
-                  instagramUrl={video.instagramUrl}
-                  likeCount={likeState.count}
-                  liked={likeState.liked}
-                  onLike={() => handleLike(video.id)}
-                />
-              </VideoFrame>
-            </div>
+      {/* Scroll layer */}
+      <div
+        ref={containerRef}
+        className="relative h-full w-full overflow-y-auto snap-y snap-mandatory"
+        style={{
+          overscrollBehavior: "contain",
+          WebkitOverflowScrolling: "touch",
+          scrollbarWidth: "none",
+        }}
+      >
+        {/* Intro */}
+        <div
+          data-index={0}
+          className="h-[100svh] w-full snap-start flex items-center justify-center"
+        >
+          <div className="h-[78svh] w-full flex items-center justify-center">
+            <VideoFrame>
+              <IntroSlide />
+            </VideoFrame>
           </div>
-        );
-      })}
+        </div>
 
-      {/* Indicator */}
-      <div className="absolute right-4 top-4 px-2 py-1 rounded-lg bg-black/35 text-white/90 text-xs backdrop-blur-sm">
-        {currentIndex + 1}/{totalSlides}
+        {/* Videos */}
+        {videos.map((video, idx) => {
+          const slideIndex = idx + 1;
+          const likeState = likes[video.id] ?? {
+            count: Number(video.likeCount ?? 0),
+            liked: false,
+          };
+          const isActive = currentIndex === slideIndex;
+
+          const preloadType: "auto" | "metadata" =
+            Math.abs(currentIndex - slideIndex) <= 1 ? "auto" : "metadata";
+
+          return (
+            <div
+              key={video.id}
+              data-index={slideIndex}
+              className="h-[100svh] w-full snap-start flex items-center justify-center"
+            >
+              <div className="h-[78svh] w-full flex items-center justify-center">
+                <VideoFrame>
+                  <VideoCardSound
+                    active={isActive}
+                    preload={preloadType}
+                    src={video.src}
+                    poster={video.poster}
+                    title={video.title}
+                    description={video.description}
+                    spotifyUrl={video.spotifyUrl}
+                    soundcloudUrl={video.soundcloudUrl}
+                    instagramUrl={video.instagramUrl}
+                    likeCount={likeState.count}
+                    liked={likeState.liked}
+                    onLike={() => handleLike(video.id)}
+                  />
+                </VideoFrame>
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Indicator */}
+        <div className="absolute right-4 top-4 px-2 py-1 rounded-lg bg-black/35 text-white/90 text-xs backdrop-blur-sm">
+          {currentIndex + 1}/{totalSlides}
+        </div>
+
+        {/* Hide scrollbar (webkit) */}
+        <style jsx>{`
+          div::-webkit-scrollbar {
+            display: none;
+          }
+        `}</style>
       </div>
-
-      {/* Hide scrollbar (webkit) */}
-      <style jsx>{`
-        div::-webkit-scrollbar {
-          display: none;
-        }
-      `}</style>
     </div>
   );
 }

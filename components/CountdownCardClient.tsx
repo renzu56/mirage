@@ -45,10 +45,10 @@ export function CountdownCardClient({ targetIso }: { targetIso: string }) {
   return (
     <div className="w-full flex items-center justify-center">
       <div className="flex gap-2">
-        <Box label="Tage" value={parts?.days ?? 0} />
-        <Box label="Std" value={parts?.hours ?? 0} />
+        <Box label="Days" value={parts?.days ?? 0} />
+        <Box label="Hours" value={parts?.hours ?? 0} />
         <Box label="Min" value={parts?.minutes ?? 0} />
-        <Box label="Sek" value={parts?.seconds ?? 0} />
+        <Box label="Sec" value={parts?.seconds ?? 0} />
       </div>
     </div>
   );
